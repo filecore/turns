@@ -38,33 +38,25 @@ export class UI {
   // ── Health bars ─────────────────────────────────────────────────────────────
 
   drawHealthBars(p1, p2) {
-    const ctx   = this.ctx;
-    const barW  = this._px(280);
-    const barH  = this._px(14);
-    const barY  = this._px(18);
-    const pad   = this._px(18);
-
-    // P1 bar (left side)
-    this._drawBar(pad, barY, barW, barH, p1.hp / p1.maxHp, P_COLORS[0]);
-    // P2 bar (right side, flipped fill direction)
-    this._drawBar(this.canvas.width - pad - barW, barY, barW, barH, p2.hp / p2.maxHp, P_COLORS[1], true);
+    if (p1.hp > 0) this._drawHealthAboveHead(p1, 0);
+    if (p2.hp > 0) this._drawHealthAboveHead(p2, 1);
   }
 
-  _drawBar(x, y, w, h, frac, color, rightAlign = false) {
-    const ctx = this.ctx;
-    // Background
+  _drawHealthAboveHead(player, idx) {
+    const ctx  = this.ctx;
+    const barW = this._px(player.radius * 4);
+    const barH = this._px(5);
+    const cx   = this._px(player.x);
+    const y    = this._px(player.y - player.radius - 10) - barH;
+    const x    = cx - barW / 2;
+    const frac = Math.max(0, player.hp / player.maxHp);
     ctx.fillStyle = '#333333';
-    ctx.fillRect(x, y, w, h);
-    // Fill
-    const fill = Math.max(0, frac) * w;
-    ctx.fillStyle = color;
-    if (rightAlign) ctx.fillRect(x + w - fill, y, fill, h);
-    else            ctx.fillRect(x, y, fill, h);
-    // Flash white when low
+    ctx.fillRect(x, y, barW, barH);
+    ctx.fillStyle = P_COLORS[idx];
+    ctx.fillRect(x, y, frac * barW, barH);
     if (frac < 0.25) {
-      ctx.fillStyle = 'rgba(255,255,255,0.18)';
-      if (rightAlign) ctx.fillRect(x + w - fill, y, fill, h);
-      else            ctx.fillRect(x, y, fill, h);
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.fillRect(x, y, frac * barW, barH);
     }
   }
 
@@ -132,14 +124,19 @@ export class UI {
   _drawAmmoFor(player, idx) {
     if (player.hp <= 0) return;
     const ctx = this.ctx;
-    const sx  = this._px(player.x);
-    const sy  = this._px(player.y - player.radius - 14);
-    const dotW = this._px(7);
-    const dotH = this._px(5);
-    const gap  = this._px(3);
-    const total = player.maxAmmo;
+    // Draw near the gun: gun is fixed to viewer's right side of the player
+    const facingRight = Math.cos(player.aimAngle || 0) >= 0;
+    const side  = facingRight ? 1 : -1;
+    const gx    = player.x + side * player.radius * 1.2;
+    const gy    = player.y - player.radius * 0.4;
+    const sx    = this._px(gx);
+    const sy    = this._px(gy);
+    const dotW  = this._px(6);
+    const dotH  = this._px(4);
+    const gap   = this._px(3);
+    const total   = player.maxAmmo;
     const current = player.ammo;
-    const startX = sx - ((total * (dotW + gap)) / 2);
+    const startX  = sx - (total * (dotW + gap) - gap) / 2;
 
     for (let i = 0; i < total; i++) {
       ctx.fillStyle = i < current ? P_COLORS[idx] : '#444444';
@@ -150,7 +147,7 @@ export class UI {
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.font      = this._font(10, 'normal');
       ctx.textAlign = 'center';
-      ctx.fillText('RELOAD', sx, sy - this._px(6));
+      ctx.fillText('RELOAD', sx, sy - this._px(7));
     }
   }
 
