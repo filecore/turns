@@ -462,10 +462,20 @@ export class Game {
       if (this.isOnline && this.isHost) {
         this.net.send({ type: 'start_pick', offer: this.cardOffer.map(c => c.id), pickerIdx: 1 });
       }
+      if (this.isAI) this._scheduleAIPick('start_pick');
     } else {
       if (this.isOnline && !this.isHost) return; // guest waits for fight_start from host
       this._startFight();
     }
+  }
+
+  _scheduleAIPick(phase) {
+    setTimeout(() => {
+      if (this.state !== phase || this.pickerIdx !== 1) return;
+      const idx = Math.floor(Math.random() * (this.cardOffer?.length || 1));
+      if (phase === 'start_pick') this._pickCard(idx);
+      else                        this._pickCardRound(idx);
+    }, 900);
   }
 
   _startFight() {
@@ -597,6 +607,7 @@ export class Game {
     if (this.isOnline && this.isHost) {
       this.net.send({ type: 'card_pick', offer: this.cardOffer.map(c => c.id), pickerIdx: loserIdx });
     }
+    if (this.isAI && loserIdx === 1) this._scheduleAIPick('card_pick');
   }
 
   _receiveCardPick(msg) {
@@ -1007,7 +1018,8 @@ export class Game {
       const ls = { ...this.lobbyState };
       if (this.state === 'start_pick') {
         ls.mode = 'start_pick';
-        const isLocalPicker = this.isLocal || (this.isHost && this.pickerIdx === 0) || (!this.isHost && this.pickerIdx === 1);
+        const isLocalPicker = this.isAI ? this.pickerIdx === 0
+          : (this.isLocal || (this.isHost && this.pickerIdx === 0) || (!this.isHost && this.pickerIdx === 1));
         const pickerCards = this.players[this.pickerIdx]?.cards || [];
         this.ui.drawCardPicker(this.cardOffer, this.cardHovered, this.pickerIdx, isLocalPicker, pickerCards);
       } else {
@@ -1034,7 +1046,8 @@ export class Game {
     }
 
     if (this.state === 'card_pick') {
-      const isLocalPicker = this.isLocal || (this.isHost && this.pickerIdx === 0) || (!this.isHost && this.pickerIdx === 1);
+      const isLocalPicker = this.isAI ? this.pickerIdx === 0
+        : (this.isLocal || (this.isHost && this.pickerIdx === 0) || (!this.isHost && this.pickerIdx === 1));
       const pickerCards = this.players[this.pickerIdx]?.cards || [];
       this.ui.drawCardPicker(this.cardOffer, this.cardHovered, this.pickerIdx, isLocalPicker, pickerCards);
     }
