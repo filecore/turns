@@ -329,6 +329,7 @@ export class Game {
       reloading: p.reloading, reloadTimer: p.reloadTimer, reloadTime: p.reloadTime,
       blocking: p.blocking, blockTimer: p.blockTimer, blockCooldown: p.blockCooldown,
       radius: p.radius, aimAngle: p.aimAngle, onGround: p.onGround,
+      score: p.score, fightWins: p.fightWins,
     };
   }
 
@@ -498,7 +499,12 @@ export class Game {
     this.players    = [null, null];
     this.bullets    = [];
     this.lobbyState = { mode: 'menu', roomCode: '', inputCode: '', error: '' };
-    if (this.net) { this.net.disconnect(); this.net = null; }
+    if (this.net) {
+      this.net.onOpponentLeft = null;
+      this.net.onMessage      = null;
+      this.net.disconnect();
+      this.net = null;
+    }
   }
 
   _startCardPick(loserIdx) {
