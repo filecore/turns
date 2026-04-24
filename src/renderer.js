@@ -316,8 +316,8 @@ export class Renderer {
       this.shake.x = 0;
       this.shake.y = 0;
     }
-    this.camera.position.x = ARENA_W / 2 + this.shake.x;
-    this.camera.position.y = ARENA_H / 2 + this.shake.y;
+    this.camera.position.x = this.shake.x;
+    this.camera.position.y = this.shake.y;
     this.camera.updateProjectionMatrix();
 
     this.tickBg(t);
