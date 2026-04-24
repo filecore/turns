@@ -253,10 +253,12 @@ export class Renderer {
 
     pm.root.position.set(playerState.x, playerState.y, 1);
 
-    // Squash-and-stretch based on vertical velocity
+    // Squash-and-stretch based on vertical velocity + landing squish
     const vy = playerState.vy || 0;
-    const stretchY = vy < -280 ? 1.12 : (vy > 280 && !playerState.onGround) ? 0.88 : 1.0;
-    const stretchX = vy < -280 ? 0.9  : (vy > 280 && !playerState.onGround) ? 1.1  : 1.0;
+    const land = playerState.landTimer || 0;
+    const landSquish = land > 0 ? (land / 0.12) * 0.28 : 0;  // peaks at touch, fades out
+    const stretchY = land > 0 ? (1.0 - landSquish) : (vy < -280 ? 1.12 : (vy > 280 && !playerState.onGround) ? 0.88 : 1.0);
+    const stretchX = land > 0 ? (1.0 + landSquish) : (vy < -280 ? 0.9  : (vy > 280 && !playerState.onGround) ? 1.1  : 1.0);
 
     // Rotate root to face aim direction (flip if aiming left)
     const facingRight = Math.cos(aimAngle) >= 0;

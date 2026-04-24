@@ -333,7 +333,7 @@ export class Game {
       reloading: p.reloading, reloadTimer: p.reloadTimer, reloadTime: p.reloadTime,
       blocking: p.blocking, blockTimer: p.blockTimer, blockCooldown: p.blockCooldown,
       radius: p.radius, aimAngle: p.aimAngle, onGround: p.onGround,
-      score: p.score, fightWins: p.fightWins,
+      score: p.score, fightWins: p.fightWins, landTimer: p.landTimer || 0,
     };
   }
 
@@ -429,7 +429,7 @@ export class Game {
       p.x = spawn.x; p.y = spawn.y; p.vx = 0; p.vy = 0;
       p.hp = p.maxHp; p.ammo = p.maxAmmo; p.reloading = false; p.reloadTimer = 0;
       p.blocking = false; p.blockTimer = 0; p.blockDurationTimer = 0; p.shootTimer = 0;
-      p.tasteTimer = 0; p.pristineFired = false; p._decayQueue = null;
+      p.tasteTimer = 0; p.pristineFired = false; p._decayQueue = null; p.landTimer = 0;
     }
 
     if (this.isOnline && this.isHost) {
@@ -647,7 +647,7 @@ export class Game {
 
     // Taste of blood
     if (p.tasteTimer > 0) { p.tasteTimer -= dt; }
-    const speedMult = (p.tasteTimer > 0) ? 1.5 : 1.0;
+    const speedMult = ((p.tasteTimer > 0) ? 1.5 : 1.0) * (p.speedMult || 1.0);
 
     // Shoot timer
     if (p.shootTimer > 0) p.shootTimer -= dt;
@@ -723,10 +723,15 @@ export class Game {
 
     // Physics
     if (p.wallJumpCooldown > 0) p.wallJumpCooldown -= dt;
+    const wasOnGround = p.onGround;
     applyGravity(p, dt);
     applyVelocity(p, dt);
     resolvePlatforms(p, p.radius, this.map.platforms, dt);
     clampToArena(p, p.radius, ARENA_W, ARENA_H);
+
+    // Landing squish timer
+    if (!wasOnGround && p.onGround) p.landTimer = 0.12;
+    if (p.landTimer > 0) p.landTimer -= dt;
 
     // Friction
     if (p.onGround) p.vx *= Math.pow(FRICTION, dt * 60);
@@ -819,10 +824,10 @@ export class Game {
       shooter.tasteTimer = 3.0;
     }
 
-    // Knockback
+    // Knockback: horizontal push in bullet travel direction + upward impulse
     const angle = Math.atan2(bullet.vy, bullet.vx);
-    target.vx += Math.cos(angle) * 180;
-    target.vy += Math.sin(angle) * 80;
+    target.vx += Math.cos(angle) * 220;
+    target.vy -= 160;  // always knock upward for satisfying hit feel
 
     this.renderer.spawnHitBurst(target.x, target.y, targetIdx === 0 ? 0xe63946 : 0x457b9d);
     this.renderer.triggerShake(5, 0.18);
