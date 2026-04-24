@@ -34,7 +34,7 @@ function defaultStats() {
     bulletDamage: BASE_DAMAGE, bulletRadius: BULLET_RADIUS, bulletSpeed: BULLET_SPEED,
     bulletsPerShot: 1, bulletBounces: 0, bulletHoming: false,
     shootCooldown: SHOOT_COOLDOWN, shootTimer: 0,
-    blockCooldown: BLOCK_COOLDOWN, blockTimer: 0, blocking: false, blockHeld: false,
+    blockCooldown: BLOCK_COOLDOWN, blockTimer: 0, blockDurationTimer: 0, blocking: false, blockHeld: false,
     autoBlockOnLastShot: false, damageDecay: false, leech: 0,
     tasteOfBlood: false, tasteTimer: 0,
     pristineBonus: false, pristineFired: false,
@@ -441,10 +441,6 @@ export class Game {
 
   _endMatch(winnerIdx) {
     this.state = 'match_end';
-    this._showOverlay('', '', 0, null);
-    setTimeout(() => {
-      this.state = 'match_end';
-    }, 200);
   }
 
   _startCardPick(loserIdx) {
@@ -521,10 +517,9 @@ export class Game {
 
   _startBlock(p) {
     if (p.blockTimer > 0) return;
-    p.blocking  = true;
-    p.blockHeld = true;
-    setTimeout(() => { p.blocking = false; }, BLOCK_DURATION * 1000);
-    p.blockTimer = p.blockCooldown;
+    p.blocking          = true;
+    p.blockDurationTimer = BLOCK_DURATION;
+    p.blockTimer        = p.blockCooldown;
   }
 
   // ── Game tick ─────────────────────────────────────────────────────────────────
@@ -582,8 +577,12 @@ export class Game {
       if (p.reloadTimer <= 0) { p.reloading = false; p.ammo = p.maxAmmo; }
     }
 
-    // Block timer (cooldown)
+    // Block cooldown and active duration
     if (p.blockTimer > 0) p.blockTimer -= dt;
+    if (p.blocking) {
+      p.blockDurationTimer -= dt;
+      if (p.blockDurationTimer <= 0) p.blocking = false;
+    }
 
     // Pristine perseverance: grant HP bonus once if above 90%
     if (p.pristineBonus && !p.pristineFired && p.hp / p.maxHp > 0.9) {
