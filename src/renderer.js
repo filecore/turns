@@ -181,6 +181,13 @@ export class Renderer {
     eyeR.position.set( 0.3, -0.2, 0.1);
     root.add(eyeL, eyeR);
 
+    // Mouth (thin horizontal rect)
+    const mouthGeo = new THREE.PlaneGeometry(0.4, 0.08);
+    const mouthMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+    const mouth    = new THREE.Mesh(mouthGeo, mouthMat);
+    mouth.position.set(0, 0.28, 0.1);
+    root.add(mouth);
+
     // Arm (thick rectangle pointing toward gun)
     const armGeo  = new THREE.PlaneGeometry(0.85, 0.13);
     const armMat  = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
@@ -258,11 +265,12 @@ export class Renderer {
     pm.arm.position.set(Math.cos(localAngle) * 0.5, -Math.sin(localAngle) * 0.5, 0.09);
     pm.arm.rotation.z = localAngle;
 
-    // Leg walk animation -- only when grounded and moving
+    // Leg and back arm animation -- only when grounded and moving
     const walking = playerState.onGround && playerState.vx !== 0;
     const walkPhase = (t * 8) % (Math.PI * 2);
     pm.legL.rotation.z = walking ? Math.sin(walkPhase) * 0.4 : 0;
     pm.legR.rotation.z = walking ? Math.sin(walkPhase + Math.PI) * 0.4 : 0;
+    pm.backArm.rotation.z = 0.55 + (walking ? Math.sin(walkPhase + Math.PI) * 0.2 : 0);
 
     // Compress legs on landing (squat)
     const squat = playerState.onGround ? 1 : 0.9;
