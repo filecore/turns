@@ -3,6 +3,7 @@
 import { Renderer, ARENA_W, ARENA_H } from './renderer.js';
 import { UI } from './ui.js';
 import { Network } from './network.js';
+import { playShoot, playReload, playBlock, playHit, playDeath, playUiTick } from './audio.js';
 import { MAPS, randomMap } from './maps.js';
 import { CARDS, drawCardOffer } from './cards.js';
 import {
@@ -356,6 +357,7 @@ export class Game {
   }
 
   _pickCard(idx) {
+    playUiTick();
     const card = this.cardOffer[idx];
     card.apply(this.players[this.pickerIdx]);
     this.players[this.pickerIdx].cards.push(card);
@@ -429,6 +431,7 @@ export class Game {
     survivor.fightWins = (survivor.fightWins || 0) + 1;
     survivor.score    += 0.5;
 
+    playDeath();
     this._showOverlay(`Player ${survivorIdx + 1} wins`, '', 1.6, () => {
       if (survivor.score >= 5) {
         this._endMatch(survivorIdx);
@@ -481,6 +484,7 @@ export class Game {
     const localIdx = this.isHost ? 0 : 1;
     if (this.isOnline && localIdx !== this.pickerIdx) return;
 
+    playUiTick();
     const card = this.cardOffer[idx];
     card.apply(this.players[this.pickerIdx]);
     this.players[this.pickerIdx].cards.push(card);
@@ -519,6 +523,7 @@ export class Game {
       this.bullets.push(createBullet(playerIdx, p.x, p.y, bvx, bvy, p.bulletRadius, p.bulletDamage, p.bulletBounces, p.bulletHoming));
     }
 
+    playShoot();
     if (p.ammo === 0) {
       if (p.autoBlockOnLastShot) this._startBlock(p);
       this._startReload(p);
@@ -528,6 +533,7 @@ export class Game {
   _startReload(p) {
     p.reloading   = true;
     p.reloadTimer = p.reloadTime;
+    playReload();
   }
 
   _startBlock(p) {
@@ -535,6 +541,7 @@ export class Game {
     p.blocking          = true;
     p.blockDurationTimer = BLOCK_DURATION;
     p.blockTimer        = p.blockCooldown;
+    playBlock();
   }
 
   // ── Game tick ─────────────────────────────────────────────────────────────────
@@ -760,6 +767,7 @@ export class Game {
 
     this.renderer.spawnHitBurst(target.x, target.y, targetIdx === 0 ? 0xe63946 : 0x457b9d);
     this.renderer.triggerShake(5, 0.18);
+    playHit();
   }
 
   _applyDamage(target, targetIdx, dmg, shooter) {
