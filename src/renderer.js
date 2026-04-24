@@ -150,8 +150,16 @@ export class Renderer {
 
   // ── Platform rendering ──────────────────────────────────────────────────────
 
+  _disposeChildren(group) {
+    group.traverse(obj => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+    });
+    while (group.children.length) group.remove(group.children[0]);
+  }
+
   buildPlatformMeshes(platforms) {
-    while (this.platformGroup.children.length) this.platformGroup.remove(this.platformGroup.children[0]);
+    this._disposeChildren(this.platformGroup);
 
     for (const p of platforms) {
       const geo  = new THREE.PlaneGeometry(p.w, p.h);
@@ -172,7 +180,7 @@ export class Renderer {
   // ── Character rendering ─────────────────────────────────────────────────────
 
   buildPlayerMeshes() {
-    while (this.playerGroup.children.length) this.playerGroup.remove(this.playerGroup.children[0]);
+    this._disposeChildren(this.playerGroup);
     this._playerMeshes = [this._buildPlayerMesh(0), this._buildPlayerMesh(1)];
     for (const m of this._playerMeshes) this.playerGroup.add(m.root);
   }
@@ -335,8 +343,7 @@ export class Renderer {
   // ── Bullet rendering ────────────────────────────────────────────────────────
 
   syncBullets(bullets) {
-    // Remove all and rebuild (small count expected)
-    while (this.bulletGroup.children.length) this.bulletGroup.remove(this.bulletGroup.children[0]);
+    this._disposeChildren(this.bulletGroup);
 
     for (const b of bullets) {
       const geo  = new THREE.CircleGeometry(b.radius, 8);
@@ -364,6 +371,8 @@ export class Renderer {
       const p = this._particles[i];
       p.life -= dt;
       if (p.life <= 0) {
+        p.mesh.geometry.dispose();
+        p.mesh.material.dispose();
         this.effectGroup.remove(p.mesh);
         this._particles.splice(i, 1);
         continue;
