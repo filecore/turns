@@ -260,6 +260,15 @@ export class Game {
       this._receiveCardPick(msg);
       return;
     }
+    if (msg.type === 'card_pick_choice' && this.isHost) {
+      const card = CARDS.find(c => c.id === msg.cardId);
+      if (card && this.players[this.pickerIdx]) {
+        card.apply(this.players[this.pickerIdx]);
+        this.players[this.pickerIdx].cards.push(card);
+      }
+      this._startFight();
+      return;
+    }
   }
 
   _genCode() {
