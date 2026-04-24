@@ -215,6 +215,10 @@ export class Game {
     this.net.onOpponentJoined = () => {
       this._startStartPick();
     };
+    this.net.onOpponentLeft = () => {
+      this._goToLobby();
+      this.lobbyState.error = 'Opponent disconnected';
+    };
     this.net.onMessage = msg => this._onNetMessage(msg);
     this.net.onError   = err => { this.lobbyState.error = err; };
     this.net.connect('host', code);
@@ -895,6 +899,7 @@ export class Game {
         this.ui.drawScores(p1.score, p2.score);
         this.ui.drawAmmo(p1, p2);
         this.ui.drawCardStrips(p1.cards || [], p2.cards || []);
+        if (this.isOnline) this.ui.drawYouIndicator(this.isHost ? 0 : 1);
       }
       if (this._dmgNumbers.length > 0) this.ui.drawDamageNumbers(this._dmgNumbers);
       if (this.overlayText) {

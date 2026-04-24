@@ -81,6 +81,27 @@ export class UI {
     }
   }
 
+  // ── Online YOU indicator ───────────────────────────────────────────────────
+
+  drawYouIndicator(playerIdx) {
+    const ctx = this.ctx;
+    const cx  = this.canvas.width / 2;
+    const y   = this._px(52);
+    const lbl = playerIdx === 0 ? 'YOU' : '';
+    const lbr = playerIdx === 1 ? 'YOU' : '';
+
+    ctx.font      = this._font(11, 'normal');
+    ctx.fillStyle = P_COLORS[playerIdx];
+
+    if (lbl) {
+      ctx.textAlign = 'right';
+      ctx.fillText(lbl, cx - this._px(8), y);
+    } else {
+      ctx.textAlign = 'left';
+      ctx.fillText(lbr, cx + this._px(8), y);
+    }
+  }
+
   // ── Score dots ──────────────────────────────────────────────────────────────
 
   drawScores(score1, score2) {
@@ -185,23 +206,25 @@ export class UI {
   // ── Card strip (bottom corners, shows active cards per player) ─────────────
 
   drawCardStrips(p1Cards, p2Cards) {
-    const ctx  = this.ctx;
-    const bh   = this.canvas.height;
-    const pad  = this._px(10);
-    const lineH = this._px(14);
+    const ctx    = this.ctx;
+    const bh     = this.canvas.height;
+    const pad    = this._px(10);
+    const bottom = bh - this._px(26);  // clear footer text
+    const lineH  = this._px(14);
 
-    ctx.font      = this._font(10, 'normal');
+    ctx.font = this._font(10, 'normal');
+    ctx.globalAlpha = 0.7;
+
     ctx.textAlign = 'left';
     ctx.fillStyle = P_COLORS[0];
     p1Cards.forEach((c, i) => {
-      ctx.globalAlpha = 0.7;
-      ctx.fillText(c.name, pad, bh - pad - (p1Cards.length - 1 - i) * lineH);
+      ctx.fillText(c.name, pad, bottom - (p1Cards.length - 1 - i) * lineH);
     });
 
     ctx.textAlign = 'right';
     ctx.fillStyle = P_COLORS[1];
     p2Cards.forEach((c, i) => {
-      ctx.fillText(c.name, this.canvas.width - pad, bh - pad - (p2Cards.length - 1 - i) * lineH);
+      ctx.fillText(c.name, this.canvas.width - pad, bottom - (p2Cards.length - 1 - i) * lineH);
     });
 
     ctx.globalAlpha = 1;
