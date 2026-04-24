@@ -69,7 +69,7 @@ export class Renderer {
 
   _buildBgMesh() {
     const geo  = new THREE.PlaneGeometry(ARENA_W, ARENA_H);
-    const mat  = new THREE.MeshBasicMaterial({ map: this._bgTex });
+    const mat  = new THREE.MeshBasicMaterial({ map: this._bgTex, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(ARENA_W / 2, ARENA_H / 2, -10);
     return mesh;
@@ -105,7 +105,7 @@ export class Renderer {
 
   addParticle(x, y, vx, vy, color, life, radius) {
     const geo  = new THREE.CircleGeometry(radius, 6);
-    const mat  = new THREE.MeshBasicMaterial({ color });
+    const mat  = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y, 2);
     this.effectGroup.add(mesh);
@@ -134,14 +134,14 @@ export class Renderer {
 
     for (const p of platforms) {
       const geo  = new THREE.PlaneGeometry(p.w, p.h);
-      const mat  = new THREE.MeshBasicMaterial({ color: 0xededed });
+      const mat  = new THREE.MeshBasicMaterial({ color: 0xededed, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(p.x + p.w / 2, p.y + p.h / 2, 0);
       this.platformGroup.add(mesh);
 
       // Top glow edge
       const edgeGeo = new THREE.PlaneGeometry(p.w, 3);
-      const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const edgeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
       const edgeMesh = new THREE.Mesh(edgeGeo, edgeMat);
       edgeMesh.position.set(p.x + p.w / 2, p.y + 1, 0.1);
       this.platformGroup.add(edgeMesh);
@@ -162,18 +162,18 @@ export class Renderer {
 
     // Body circle
     const bodyGeo  = new THREE.CircleGeometry(1, 24);
-    const bodyMat  = new THREE.MeshBasicMaterial({ color });
+    const bodyMat  = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
     const body     = new THREE.Mesh(bodyGeo, bodyMat);
     root.add(body);
 
     // Black outline ring (slightly larger)
     const outlineGeo = new THREE.RingGeometry(1, 1.12, 24);
-    const outlineMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.FrontSide });
+    const outlineMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
     const outline    = new THREE.Mesh(outlineGeo, outlineMat);
     root.add(outline);
 
     // Eyes (two dots)
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
     const eyeGeo = new THREE.CircleGeometry(0.1, 8);
     const eyeL   = new THREE.Mesh(eyeGeo, eyeMat);
     const eyeR   = new THREE.Mesh(eyeGeo, eyeMat);
@@ -183,7 +183,7 @@ export class Renderer {
 
     // Gun (small rectangle attached to arm direction)
     const gunGeo  = new THREE.PlaneGeometry(0.7, 0.25);
-    const gunMat  = new THREE.MeshBasicMaterial({ color: 0x222222 });
+    const gunMat  = new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.DoubleSide });
     const gun     = new THREE.Mesh(gunGeo, gunMat);
     gun.position.set(1.0, 0, 0.1);
     root.add(gun);
@@ -263,7 +263,7 @@ export class Renderer {
 
     for (const b of bullets) {
       const geo  = new THREE.CircleGeometry(b.radius, 8);
-      const mat  = new THREE.MeshBasicMaterial({ color: parseInt(PLAYER_COLORS[b.owner].replace('#', ''), 16) });
+      const mat  = new THREE.MeshBasicMaterial({ color: parseInt(PLAYER_COLORS[b.owner].replace('#', ''), 16), side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(b.x, b.y, 1.5);
       this.bulletGroup.add(mesh);
