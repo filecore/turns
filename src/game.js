@@ -108,6 +108,8 @@ export class Game {
     this._pendingBlock = false;  // guest right-click block flag
     this.matchWinner   = 0;
     this.isAI          = false;
+    this._aiAimOffset  = 0;
+    this._aiAimTimer   = 0;
 
     this._bindInput();
   }
@@ -585,11 +587,13 @@ export class Game {
 
   _goToLobby() {
     this.state      = 'lobby';
-    this.isLocal    = false;
-    this.isOnline   = false;
-    this.isHost     = true;
-    this.isAI       = false;
-    this.players    = [null, null];
+    this.isLocal      = false;
+    this.isOnline     = false;
+    this.isHost       = true;
+    this.isAI         = false;
+    this._aiAimOffset = 0;
+    this._aiAimTimer  = 0;
+    this.players      = [null, null];
     this.bullets    = [];
     this.lobbyState = { mode: 'menu', roomCode: '', inputCode: '', error: '' };
     if (this.net) {
@@ -772,8 +776,17 @@ export class Game {
     } else if (localP2) {
       const opp = this.players[0];
       if (opp) {
-        const jitter = this.isAI ? (Math.random() - 0.5) * 0.25 : 0;
-        p.aimAngle = Math.atan2(-(opp.y - p.y), opp.x - p.x) + jitter;
+        if (this.isAI) {
+          // Refresh aim offset every 80-200ms for a natural wobble (not per-frame jitter)
+          this._aiAimTimer -= dt;
+          if (this._aiAimTimer <= 0) {
+            this._aiAimOffset = (Math.random() - 0.5) * 0.28;
+            this._aiAimTimer  = 0.08 + Math.random() * 0.12;
+          }
+          p.aimAngle = Math.atan2(-(opp.y - p.y), opp.x - p.x) + this._aiAimOffset;
+        } else {
+          p.aimAngle = Math.atan2(-(opp.y - p.y), opp.x - p.x);
+        }
       }
     }
 
