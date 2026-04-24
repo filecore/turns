@@ -13,9 +13,10 @@ export function createPlayerPhysics() {
     x: 0, y: 0,
     vx: 0, vy: 0,
     onGround: false,
-    onWall: 0,       // -1 left wall, 0 none, 1 right wall
-    jumpsLeft: 1,    // extra jumps (double jump counts as 1 stored)
+    onWall: 0,          // -1 left wall, 0 none, 1 right wall
+    jumpsLeft: 1,       // extra jumps (double jump counts as 1 stored)
     wallJumpCooldown: 0,
+    coyoteTimer: 0,     // brief window to jump after walking off a ledge
   };
 }
 
@@ -86,17 +87,20 @@ export function applyVelocity(phys, dt) {
 }
 
 // Clamp player inside arena bounds
+// Also sets onWall so players can wall-jump off the arena edges
 export function clampToArena(phys, radius, arenaW, arenaH) {
-  if (phys.x - radius < 0)       { phys.x = radius;        if (phys.vx < 0) phys.vx = 0; }
-  if (phys.x + radius > arenaW)  { phys.x = arenaW - radius; if (phys.vx > 0) phys.vx = 0; }
+  if (phys.x - radius < 0)       { phys.x = radius;          if (phys.vx < 0) phys.vx = 0; phys.onWall = -1; }
+  if (phys.x + radius > arenaW)  { phys.x = arenaW - radius; if (phys.vx > 0) phys.vx = 0; phys.onWall =  1; }
   // Falling off bottom respawns at top (safety net, should not normally happen)
   if (phys.y - radius > arenaH)  { phys.y = 60; phys.vy = 0; }
 }
 
 export function doJump(phys) {
-  if (phys.onGround) {
+  // Ground or coyote-time jump
+  if (phys.onGround || phys.coyoteTimer > 0) {
     phys.vy = JUMP_VEL;
-    phys.onGround = false;
+    phys.onGround   = false;
+    phys.coyoteTimer = 0;
     return true;
   }
   if (phys.onWall !== 0 && phys.wallJumpCooldown <= 0) {

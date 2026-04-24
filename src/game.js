@@ -463,7 +463,7 @@ export class Game {
       p.x = spawn.x; p.y = spawn.y; p.vx = 0; p.vy = 0;
       p.hp = p.maxHp; p.ammo = p.maxAmmo; p.reloading = false; p.reloadTimer = 0;
       p.blocking = false; p.blockTimer = 0; p.blockDurationTimer = 0; p.shootTimer = 0;
-      p.tasteTimer = 0; p.pristineFired = false; p._decayQueue = null; p.landTimer = 0;
+      p.tasteTimer = 0; p.pristineFired = false; p._decayQueue = null; p.landTimer = 0; p.coyoteTimer = 0;
     }
 
     if (this.isOnline && this.isHost) {
@@ -770,6 +770,10 @@ export class Game {
     // Landing squish timer
     if (!wasOnGround && p.onGround) p.landTimer = 0.12;
     if (p.landTimer > 0) p.landTimer -= dt;
+
+    // Coyote time: open a brief jump window when walking off a ledge
+    if (wasOnGround && !p.onGround && p.vy > 0) p.coyoteTimer = 0.12;
+    if (p.coyoteTimer > 0) p.coyoteTimer -= dt;
 
     // Friction
     if (p.onGround) p.vx *= Math.pow(FRICTION, dt * 60);
