@@ -126,7 +126,7 @@ export class Game {
     // HUD canvas also catches clicks for card picker
     this.ui.canvas.addEventListener('click', e => this._onOverlayClick(e));
     this.ui.canvas.addEventListener('mousemove', e => {
-      if (this.state === 'card_pick') {
+      if (this.state === 'card_pick' || this.state === 'start_pick') {
         this.cardHovered = this.ui.getCardPickerHover(this.cardOffer, e.offsetX, e.offsetY);
       }
     });
@@ -183,11 +183,18 @@ export class Game {
       }
     }
 
-    if (this.state === 'card_pick') {
+    if (this.state === 'start_pick') {
       const localIdx = this.isHost ? 0 : 1;
-      if (localIdx !== this.pickerIdx && this.isOnline) return;
+      if (this.isOnline && localIdx !== this.pickerIdx) return;
       const picked = this.ui.getCardPickerClick(this.cardOffer, mx, my);
       if (picked >= 0) this._pickCard(picked);
+    }
+
+    if (this.state === 'card_pick') {
+      const localIdx = this.isHost ? 0 : 1;
+      if (this.isOnline && localIdx !== this.pickerIdx) return;
+      const picked = this.ui.getCardPickerClick(this.cardOffer, mx, my);
+      if (picked >= 0) this._pickCardRound(picked);
     }
   }
 
