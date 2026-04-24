@@ -153,7 +153,7 @@ export class UI {
 
   // ── Round overlay text ──────────────────────────────────────────────────────
 
-  drawRoundText(text, subtext = '') {
+  drawRoundText(text, subtext = '', color = '#ffffff') {
     const ctx = this.ctx;
     const cx  = this.canvas.width  / 2;
     const cy  = this.canvas.height / 2;
@@ -161,7 +161,7 @@ export class UI {
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = color;
     ctx.font      = this._font(80);
     ctx.textAlign = 'center';
     ctx.fillText(text, cx, cy);

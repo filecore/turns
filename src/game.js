@@ -88,9 +88,10 @@ export class Game {
     this.pickerIdx     = 0;       // which player is picking a card
     this.startPickPhase = 0;      // 0 = p1 picks, 1 = p2 picks, 2 = done
 
-    this.overlayTimer  = 0;
-    this.overlayText   = '';
+    this.overlayTimer   = 0;
+    this.overlayText    = '';
     this.overlaySubtext = '';
+    this.overlayColor   = '#ffffff';
 
     this.lobbyState  = { mode: 'menu', roomCode: '', inputCode: '', error: '' };
 
@@ -432,18 +433,18 @@ export class Game {
     survivor.score    += 0.5;
 
     playDeath();
+    const winColor = survivorIdx === 0 ? '#e63946' : '#457b9d';
     this._showOverlay(`Player ${survivorIdx + 1} wins`, '', 1.6, () => {
       if (survivor.score >= 5) {
         this._endMatch(survivorIdx);
       } else if (survivor.fightWins >= 2) {
-        // Round ended, loser picks a card
         survivor.fightWins = 0;
         this.players[deadIdx].fightWins = 0;
         this._startCardPick(deadIdx);
       } else {
         this._startFight();
       }
-    });
+    }, winColor);
   }
 
   _endMatch(winnerIdx) {
@@ -497,9 +498,10 @@ export class Game {
 
   // ── Overlay helper ────────────────────────────────────────────────────────────
 
-  _showOverlay(text, subtext, duration, callback) {
+  _showOverlay(text, subtext, duration, callback, color = '#ffffff') {
     this.overlayText    = text;
     this.overlaySubtext = subtext;
+    this.overlayColor   = color;
     this.overlayTimer   = duration;
     this._overlayCallback = callback;
   }
@@ -838,7 +840,7 @@ export class Game {
         this.ui.drawAmmo(p1, p2);
       }
       if (this.overlayText) {
-        this.ui.drawRoundText(this.overlayText, this.overlaySubtext);
+        this.ui.drawRoundText(this.overlayText, this.overlaySubtext, this.overlayColor);
       }
     }
 
