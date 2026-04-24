@@ -373,6 +373,7 @@ export class Game {
         const col = pi === 0 ? '#e63946' : '#457b9d';
         this._dmgNumbers.push({ x: player.x, y: player.y - player.radius, amount: Math.round(delta), timer: 0.9, color: col });
         this.renderer.spawnHitBurst(player.x, player.y, pi === 0 ? 0xe63946 : 0x457b9d);
+        this.renderer.flashPlayer(pi);
         this.renderer.triggerShake(5, 0.18);
         playHit();
       }
@@ -479,7 +480,9 @@ export class Game {
       this.net.send({ type: 'fight_start', mapIdx: MAPS.indexOf(this.map) });
     }
 
-    const hint = this.isLocal ? 'P1: WASD + LClick  |  P2: Arrows + / to shoot, . to block' : '';
+    let hint = '';
+    if (this.isLocal)       hint = 'P1: WASD + LClick  |  P2: Arrows + / to shoot  .  to block';
+    else if (this.isOnline) hint = 'WASD + mouse   LClick shoot   RClick block';
     this._showOverlay('FIGHT', hint, 1.2, () => {});
   }
 
@@ -494,7 +497,7 @@ export class Game {
     this._overlayCallback = null;
     this.renderer.buildPlatformMeshes(this.map.platforms);
     this.renderer.buildPlayerMeshes();
-    this._showOverlay('FIGHT', '', 1.2, () => {});
+    this._showOverlay('FIGHT', 'Arrows + mouse   LClick shoot   RClick block', 1.2, () => {});
   }
 
   // ── Round / match logic ───────────────────────────────────────────────────────
@@ -918,6 +921,7 @@ export class Game {
     target.vy -= 160;  // always knock upward for satisfying hit feel
 
     this.renderer.spawnHitBurst(target.x, target.y, targetIdx === 0 ? 0xe63946 : 0x457b9d);
+    this.renderer.flashPlayer(targetIdx);
     this.renderer.triggerShake(5, 0.18);
     playHit();
     const dmgColor = targetIdx === 0 ? '#e63946' : '#457b9d';
@@ -963,8 +967,8 @@ export class Game {
     // Update meshes before rendering so Three.js sees current frame state
     if (this.state === 'fight' || this.state === 'match_end') {
       this.renderer.syncBullets(this.bullets);
-      if (this.players[0]) this.renderer.updatePlayerMesh(0, this.players[0], this.players[0].aimAngle, t);
-      if (this.players[1]) this.renderer.updatePlayerMesh(1, this.players[1], this.players[1].aimAngle, t);
+      if (this.players[0]) this.renderer.updatePlayerMesh(0, this.players[0], this.players[0].aimAngle, t, dt);
+      if (this.players[1]) this.renderer.updatePlayerMesh(1, this.players[1], this.players[1].aimAngle, t, dt);
     }
 
     this.renderer.render(dt, t);

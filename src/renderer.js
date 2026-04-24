@@ -122,6 +122,27 @@ export class Renderer {
     }
   }
 
+  spawnDeathBurst(x, y, colorHex) {
+    const count = 24;
+    for (let i = 0; i < count; i++) {
+      const angle  = (i / count) * Math.PI * 2 + Math.random() * 0.3;
+      const speed  = 180 + Math.random() * 380;
+      const radius = 4 + Math.random() * 10;
+      this.addParticle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, colorHex, 0.55 + Math.random() * 0.5, radius);
+    }
+    // Second ring of smaller bright white sparks
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2;
+      const speed = 300 + Math.random() * 200;
+      this.addParticle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 0xffffff, 0.3 + Math.random() * 0.2, 2 + Math.random() * 3);
+    }
+  }
+
+  flashPlayer(idx) {
+    if (!this._playerMeshes) return;
+    this._playerMeshes[idx].hitFlashTimer = 0.1;
+  }
+
   // Animate background texture offset for subtle movement
   tickBg(t) {
     this._bgTex.offset.set(t * 0.004 % 1, t * 0.002 % 1);
@@ -227,7 +248,7 @@ export class Renderer {
     blockArc.visible = false;
     root.add(blockArc);
 
-    return { root, body, gun, arm, backArm, legL, legR, blockArc, color, baseRadius: 1 };
+    return { root, body, gun, arm, backArm, legL, legR, blockArc, color, baseRadius: 1, hitFlashTimer: 0, deathTimer: 0, prevAlive: true };
   }
 
   _buildLeg() {
@@ -242,48 +263,69 @@ export class Renderer {
     return g;
   }
 
-  updatePlayerMesh(idx, playerState, aimAngle, t) {
+  updatePlayerMesh(idx, playerState, aimAngle, t, dt = 0) {
     if (!this._playerMeshes) return;
     const pm   = this._playerMeshes[idx];
     const r    = playerState.radius;
     const dead = playerState.hp <= 0;
 
+    // Detect alive → dead transition and start spin-shrink animation
+    if (!dead && pm.deathTimer > 0) pm.deathTimer = 0;
+    if (pm.prevAlive && dead) pm.deathTimer = 0.4;
+    pm.prevAlive = !dead;
+
+    if (pm.deathTimer > 0) {
+      pm.deathTimer -= dt;
+      const prog = 1 - Math.max(0, pm.deathTimer) / 0.4;
+      pm.root.rotation.z = prog * Math.PI * 4;
+      const s = Math.max(0, 1 - prog) * r;
+      pm.root.scale.set(s, s, 1);
+      pm.root.position.set(playerState.x, playerState.y, 1);
+      pm.root.visible = true;
+      if (pm.hitFlashTimer > 0) pm.hitFlashTimer -= dt;
+      return;
+    }
+
+    pm.root.rotation.z = 0;
     pm.root.visible = !dead;
     if (dead) return;
 
     pm.root.position.set(playerState.x, playerState.y, 1);
 
+    // Hit flash: briefly turn body white on hit
+    if (pm.hitFlashTimer > 0) {
+      pm.hitFlashTimer -= dt;
+      pm.body.material.color.setHex(0xffffff);
+    } else {
+      pm.body.material.color.setHex(pm.color);
+    }
+
     // Squash-and-stretch based on vertical velocity + landing squish
     const vy = playerState.vy || 0;
     const land = playerState.landTimer || 0;
-    const landSquish = land > 0 ? (land / 0.12) * 0.28 : 0;  // peaks at touch, fades out
+    const landSquish = land > 0 ? (land / 0.12) * 0.28 : 0;
     const stretchY = land > 0 ? (1.0 - landSquish) : (vy < -280 ? 1.12 : (vy > 280 && !playerState.onGround) ? 0.88 : 1.0);
     const stretchX = land > 0 ? (1.0 + landSquish) : (vy < -280 ? 0.9  : (vy > 280 && !playerState.onGround) ? 1.1  : 1.0);
 
-    // Rotate root to face aim direction (flip if aiming left)
     const facingRight = Math.cos(aimAngle) >= 0;
     pm.root.scale.set(facingRight ? r * stretchX : -r * stretchX, r * stretchY, 1);
 
-    // Gun fixed to left hand (viewer's right); only rotates with aim
     const localAngle = facingRight ? aimAngle : Math.PI - aimAngle;
     pm.gun.position.set(1.1, 0, 0.1);
     pm.gun.rotation.z = localAngle;
     pm.arm.position.set(Math.cos(localAngle) * 0.5, -Math.sin(localAngle) * 0.5, 0.09);
     pm.arm.rotation.z = localAngle;
 
-    // Leg and back arm animation -- only when grounded and moving
     const walking = playerState.onGround && playerState.vx !== 0;
     const walkPhase = (t * 8) % (Math.PI * 2);
     pm.legL.rotation.z = walking ? Math.sin(walkPhase) * 0.4 : 0;
     pm.legR.rotation.z = walking ? Math.sin(walkPhase + Math.PI) * 0.4 : 0;
     pm.backArm.rotation.z = 0.55 + (walking ? Math.sin(walkPhase + Math.PI) * 0.2 : 0);
 
-    // Compress legs on landing (squat)
     const squat = playerState.onGround ? 1 : 0.9;
     pm.legL.scale.y = squat;
     pm.legR.scale.y = squat;
 
-    // Block arc
     pm.blockArc.visible = playerState.blocking;
     if (playerState.blocking) {
       pm.blockArc.rotation.z = facingRight ? aimAngle : Math.PI - aimAngle;
