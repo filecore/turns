@@ -395,6 +395,7 @@ export class Game {
         this.net.send({ type: 'start_pick', offer: this.cardOffer.map(c => c.id), pickerIdx: 1 });
       }
     } else {
+      if (this.isOnline && !this.isHost) return; // guest waits for fight_start from host
       this._startFight();
     }
   }
@@ -501,6 +502,7 @@ export class Game {
     if (this.isOnline) {
       this.net.send({ type: 'card_pick_choice', cardId: card.id });
     }
+    if (this.isOnline && !this.isHost) return; // guest waits for fight_start from host
     this._startFight();
   }
 
