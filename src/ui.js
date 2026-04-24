@@ -151,6 +151,21 @@ export class UI {
     }
   }
 
+  // ── Floating damage numbers ─────────────────────────────────────────────────
+
+  drawDamageNumbers(numbers) {
+    const ctx = this.ctx;
+    ctx.textAlign = 'center';
+    for (const n of numbers) {
+      const alpha = Math.max(0, n.timer / 0.9);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle   = n.color;
+      ctx.font        = this._font(16);
+      ctx.fillText(`-${n.amount}`, this._px(n.x), this._px(n.y));
+    }
+    ctx.globalAlpha = 1;
+  }
+
   // ── Round overlay text ──────────────────────────────────────────────────────
 
   drawRoundText(text, subtext = '', color = '#ffffff') {

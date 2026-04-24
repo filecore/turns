@@ -92,6 +92,7 @@ export class Game {
     this.overlayText    = '';
     this.overlaySubtext = '';
     this.overlayColor   = '#ffffff';
+    this._dmgNumbers    = [];   // { x, y, amount, timer, color }
 
     this.lobbyState  = { mode: 'menu', roomCode: '', inputCode: '', error: '' };
 
@@ -570,6 +571,13 @@ export class Game {
       return;
     }
 
+    // Tick floating damage numbers
+    for (let i = this._dmgNumbers.length - 1; i >= 0; i--) {
+      this._dmgNumbers[i].timer -= dt;
+      this._dmgNumbers[i].y    -= 60 * dt;  // float upward (arena units/s)
+      if (this._dmgNumbers[i].timer <= 0) this._dmgNumbers.splice(i, 1);
+    }
+
     // Guest does not simulate -- it sends inputs and receives authoritative state
     if (this.isOnline && !this.isHost) {
       this._sendContinuousInput();
@@ -777,6 +785,8 @@ export class Game {
     this.renderer.spawnHitBurst(target.x, target.y, targetIdx === 0 ? 0xe63946 : 0x457b9d);
     this.renderer.triggerShake(5, 0.18);
     playHit();
+    const dmgColor = targetIdx === 0 ? '#e63946' : '#457b9d';
+    this._dmgNumbers.push({ x: target.x, y: target.y - target.radius, amount: Math.round(bullet.damage), timer: 0.9, color: dmgColor });
   }
 
   _applyDamage(target, targetIdx, dmg, shooter) {
@@ -847,6 +857,7 @@ export class Game {
         this.ui.drawScores(p1.score, p2.score);
         this.ui.drawAmmo(p1, p2);
       }
+      if (this._dmgNumbers.length > 0) this.ui.drawDamageNumbers(this._dmgNumbers);
       if (this.overlayText) {
         this.ui.drawRoundText(this.overlayText, this.overlaySubtext, this.overlayColor);
       }

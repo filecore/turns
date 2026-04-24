@@ -252,11 +252,15 @@ export class Renderer {
     if (dead) return;
 
     pm.root.position.set(playerState.x, playerState.y, 1);
-    pm.root.scale.set(r, r, 1);
+
+    // Squash-and-stretch based on vertical velocity
+    const vy = playerState.vy || 0;
+    const stretchY = vy < -280 ? 1.12 : (vy > 280 && !playerState.onGround) ? 0.88 : 1.0;
+    const stretchX = vy < -280 ? 0.9  : (vy > 280 && !playerState.onGround) ? 1.1  : 1.0;
 
     // Rotate root to face aim direction (flip if aiming left)
     const facingRight = Math.cos(aimAngle) >= 0;
-    pm.root.scale.x = facingRight ? r : -r;
+    pm.root.scale.set(facingRight ? r * stretchX : -r * stretchX, r * stretchY, 1);
 
     // Gun fixed to left hand (viewer's right); only rotates with aim
     const localAngle = facingRight ? aimAngle : Math.PI - aimAngle;
