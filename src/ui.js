@@ -58,6 +58,21 @@ export class UI {
       ctx.fillStyle = 'rgba(255,255,255,0.22)';
       ctx.fillRect(x, y, frac * barW, barH);
     }
+
+    // Block cooldown bar (below health bar)
+    const blockBarH = this._px(3);
+    const blockY    = y + barH + this._px(2);
+    const blockReady = !player.blockTimer || player.blockTimer <= 0;
+    if (!blockReady) {
+      const blockFrac = 1 - Math.max(0, player.blockTimer) / (player.blockCooldown || 2);
+      ctx.fillStyle = '#222222';
+      ctx.fillRect(x, blockY, barW, blockBarH);
+      ctx.fillStyle = '#55aaff';
+      ctx.fillRect(x, blockY, blockFrac * barW, blockBarH);
+    } else {
+      ctx.fillStyle = '#55aaff';
+      ctx.fillRect(x, blockY, barW, blockBarH);
+    }
   }
 
   // ── Score dots ──────────────────────────────────────────────────────────────
@@ -148,6 +163,14 @@ export class UI {
       ctx.font      = this._font(10, 'normal');
       ctx.textAlign = 'center';
       ctx.fillText('RELOAD', sx, sy - this._px(7));
+      // Reload progress bar under ammo dots
+      const reloadFrac = player.reloadTime > 0 ? 1 - Math.max(0, player.reloadTimer) / player.reloadTime : 1;
+      const reloadW    = total * (dotW + gap) - gap;
+      const reloadX    = sx - reloadW / 2;
+      ctx.fillStyle = '#222222';
+      ctx.fillRect(reloadX, sy + dotH + this._px(2), reloadW, this._px(2));
+      ctx.fillStyle = P_COLORS[idx];
+      ctx.fillRect(reloadX, sy + dotH + this._px(2), reloadFrac * reloadW, this._px(2));
     }
   }
 

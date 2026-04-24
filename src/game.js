@@ -165,10 +165,11 @@ export class Game {
 
   _onMouseDown(e) {
     if (this.state !== 'fight') return;
-    const p = this.isHost ? this.players[0] : this.players[1];
+    const localIdx = this.isHost ? 0 : 1;
+    const p = this.players[localIdx];
     if (!p || p.hp <= 0) return;
 
-    if (e.button === 0) this._tryShoot(p, 0);
+    if (e.button === 0) this._tryShoot(p, localIdx);
     if (e.button === 2) this._startBlock(p);
   }
 
@@ -317,7 +318,8 @@ export class Game {
       x: p.x, y: p.y, vx: p.vx, vy: p.vy,
       hp: p.hp, maxHp: p.maxHp,
       ammo: p.ammo, maxAmmo: p.maxAmmo,
-      reloading: p.reloading, blocking: p.blocking,
+      reloading: p.reloading, reloadTimer: p.reloadTimer, reloadTime: p.reloadTime,
+      blocking: p.blocking, blockTimer: p.blockTimer, blockCooldown: p.blockCooldown,
       radius: p.radius, aimAngle: p.aimAngle, onGround: p.onGround,
     };
   }
