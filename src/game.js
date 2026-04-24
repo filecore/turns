@@ -107,6 +107,7 @@ export class Game {
     this._fightOver    = false;  // guard against double-death in same tick
     this._pendingBlock = false;  // guest right-click block flag
     this.matchWinner   = 0;
+    this.isAI          = false;
 
     this._bindInput();
   }
@@ -193,9 +194,10 @@ export class Game {
     if (this.state === 'lobby') {
       if (this.lobbyState.mode === 'menu') {
         const action = this.ui.getLobbyClick(mx, my);
-        if (action === 'host') this._doHost();
-        if (action === 'join') { this.lobbyState.mode = 'joining'; this.lobbyState.error = ''; }
+        if (action === 'host')  this._doHost();
+        if (action === 'join')  { this.lobbyState.mode = 'joining'; this.lobbyState.error = ''; }
         if (action === 'local') this._startLocal();
+        if (action === 'ai')    this._startAI();
       }
     }
 
@@ -387,6 +389,15 @@ export class Game {
     this.isLocal  = true;
     this.isOnline = false;
     this.isHost   = true;
+    this.isAI     = false;
+    this._startStartPick();
+  }
+
+  _startAI() {
+    this.isLocal  = true;
+    this.isOnline = false;
+    this.isHost   = true;
+    this.isAI     = true;
     this._startStartPick();
   }
 
@@ -481,7 +492,8 @@ export class Game {
     }
 
     let hint = '';
-    if (this.isLocal)       hint = 'P1: WASD + LClick  |  P2: Arrows + / to shoot  .  to block';
+    if (this.isAI)          hint = 'WASD + mouse   LClick shoot   RClick block';
+    else if (this.isLocal)  hint = 'P1: WASD + LClick  |  P2: Arrows + / to shoot  .  to block';
     else if (this.isOnline) hint = 'WASD + mouse   LClick shoot   RClick block';
     this._showOverlay('FIGHT', hint, 1.2, () => {});
   }
@@ -564,6 +576,7 @@ export class Game {
     this.isLocal    = false;
     this.isOnline   = false;
     this.isHost     = true;
+    this.isAI       = false;
     this.players    = [null, null];
     this.bullets    = [];
     this.lobbyState = { mode: 'menu', roomCode: '', inputCode: '', error: '' };
@@ -745,7 +758,10 @@ export class Game {
       p.aimAngle = Math.atan2(-(this._mouseY - p.y), this._mouseX - p.x);
     } else if (localP2) {
       const opp = this.players[0];
-      if (opp) p.aimAngle = Math.atan2(-(opp.y - p.y), opp.x - p.x);
+      if (opp) {
+        const jitter = this.isAI ? (Math.random() - 0.5) * 0.25 : 0;
+        p.aimAngle = Math.atan2(-(opp.y - p.y), opp.x - p.x) + jitter;
+      }
     }
 
     // Movement input
@@ -754,7 +770,7 @@ export class Game {
       if (this._keys['KeyA']) p.vx -= moveMult * dt * 12;
       if (this._keys['KeyD']) p.vx += moveMult * dt * 12;
     }
-    if (idx === 1 && !this.isHost || isLocal && idx === 1) {
+    if ((idx === 1 && !this.isHost) || (isLocal && idx === 1 && !this.isAI)) {
       if (this._keys['ArrowLeft'])  p.vx -= moveMult * dt * 12;
       if (this._keys['ArrowRight']) p.vx += moveMult * dt * 12;
     }
@@ -776,8 +792,21 @@ export class Game {
       if (this._keys['ShiftLeft'] || this._keys['ShiftRight']) this._startBlock(p);
     }
     if (isLocal && idx === 1) {
-      if (this._keys['Numpad0'] || this._keys['Slash']) this._tryShoot(p, 1);
-      if (this._keys['NumpadEnter'] || this._keys['Period']) this._startBlock(p);
+      if (this.isAI && opponent && opponent.hp > 0) {
+        // AI: maintain ~280px distance, chase height, shoot when aimed, block randomly
+        const dx  = opponent.x - p.x;
+        const tgt = 280;
+        if      (Math.abs(dx) > tgt + 60) p.vx += Math.sign(dx) * moveMult * dt * 12;
+        else if (Math.abs(dx) < tgt - 60) p.vx -= Math.sign(dx) * moveMult * dt * 12;
+        if ((p.onGround || p.coyoteTimer > 0) && Math.random() < dt * (opponent.y < p.y - 100 ? 3.5 : 0.5)) doJump(p);
+        const dist = Math.hypot(opponent.x - p.x, opponent.y - p.y) || 1;
+        const dot  = (dx * Math.cos(p.aimAngle) - (opponent.y - p.y) * Math.sin(p.aimAngle)) / dist;
+        if (dot > 0.92 && Math.random() < dt * 8) this._tryShoot(p, 1);
+        if (Math.random() < dt * 0.4) this._startBlock(p);
+      } else if (!this.isAI) {
+        if (this._keys['Numpad0'] || this._keys['Slash']) this._tryShoot(p, 1);
+        if (this._keys['NumpadEnter'] || this._keys['Period']) this._startBlock(p);
+      }
     }
 
     // Clamp horizontal velocity

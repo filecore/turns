@@ -434,9 +434,10 @@ export class UI {
     ctx.fillText('A browser remake of ROUNDS by Landfall Games', cx, cy - this._px(155));
 
     if (state.mode === 'menu') {
-      this._drawButton(ctx, cx, cy - this._px(60), 'HOST GAME', '#e63946');
-      this._drawButton(ctx, cx, cy + this._px(20), 'JOIN GAME', '#457b9d');
-      this._drawButton(ctx, cx, cy + this._px(100), 'LOCAL 2-PLAYER', '#668844');
+      this._drawButton(ctx, cx, cy - this._px(80), 'HOST GAME', '#e63946');
+      this._drawButton(ctx, cx, cy, 'JOIN GAME', '#457b9d');
+      this._drawButton(ctx, cx, cy + this._px(80), 'LOCAL 2-PLAYER', '#668844');
+      this._drawButton(ctx, cx, cy + this._px(160), 'SOLO (vs AI)', '#557755');
 
     } else if (state.mode === 'hosting') {
       ctx.fillStyle = '#aaaaaa';
@@ -507,9 +508,10 @@ export class UI {
     const bw = this._px(280);
     const bh = this._px(52);
 
-    if (this._hitRect(mx, my, cx - bw / 2, cy - this._px(60) - bh / 2, bw, bh)) return 'host';
-    if (this._hitRect(mx, my, cx - bw / 2, cy + this._px(20) - bh / 2, bw, bh)) return 'join';
-    if (this._hitRect(mx, my, cx - bw / 2, cy + this._px(100) - bh / 2, bw, bh)) return 'local';
+    if (this._hitRect(mx, my, cx - bw / 2, cy - this._px(80)  - bh / 2, bw, bh)) return 'host';
+    if (this._hitRect(mx, my, cx - bw / 2, cy                 - bh / 2, bw, bh)) return 'join';
+    if (this._hitRect(mx, my, cx - bw / 2, cy + this._px(80)  - bh / 2, bw, bh)) return 'local';
+    if (this._hitRect(mx, my, cx - bw / 2, cy + this._px(160) - bh / 2, bw, bh)) return 'ai';
     return null;
   }
 
