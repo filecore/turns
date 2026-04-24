@@ -62,8 +62,9 @@ function createPlayer(spawnX, spawnY) {
 
 let bulletIdCounter = 0;
 function createBullet(owner, x, y, vx, vy, radius, damage, bounces, homing) {
-  // graceFrames: owner can't be hit by their own bullet for the first few frames
-  return { id: bulletIdCounter++, owner, x, y, vx, vy, radius, damage, bounces, homing, prevX: x, prevY: y, graceFrames: 4 };
+  // hasBouncedOff: owner immune until bullet ricochets off a platform or wall
+  // lifetime: auto-expire after 5s to prevent accumulation from bouncing
+  return { id: bulletIdCounter++, owner, x, y, vx, vy, radius, damage, bounces, homing, prevX: x, prevY: y, hasBouncedOff: false, lifetime: 5.0 };
 }
 
 // ── Main Game class ───────────────────────────────────────────────────────────
@@ -112,7 +113,9 @@ export class Game {
   // ── Input binding ────────────────────────────────────────────────────────────
 
   _bindInput() {
+    const gameKeys = new Set(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space']);
     window.addEventListener('keydown', e => {
+      if (this.state !== 'lobby' && gameKeys.has(e.code)) e.preventDefault();
       this._keys[e.code] = true;
       this._onKeyDown(e);
     });
@@ -467,7 +470,7 @@ export class Game {
       this.net.send({ type: 'fight_start', mapIdx: MAPS.indexOf(this.map) });
     }
 
-    const hint = this.isLocal ? 'P1: WASD + Click     P2: Arrows + Numpad0' : '';
+    const hint = this.isLocal ? 'P1: WASD + LClick  |  P2: Arrows + / to shoot, . to block' : '';
     this._showOverlay('FIGHT', hint, 1.2, () => {});
   }
 
@@ -747,8 +750,8 @@ export class Game {
       if (this._keys['ShiftLeft'] || this._keys['ShiftRight']) this._startBlock(p);
     }
     if (isLocal && idx === 1) {
-      if (this._keys['Numpad0']) this._tryShoot(p, 1);
-      if (this._keys['NumpadEnter']) this._startBlock(p);
+      if (this._keys['Numpad0'] || this._keys['Slash']) this._tryShoot(p, 1);
+      if (this._keys['NumpadEnter'] || this._keys['Period']) this._startBlock(p);
     }
 
     // Clamp horizontal velocity
@@ -794,10 +797,10 @@ export class Game {
       b.x  += b.vx * dt;
       b.y  += b.vy * dt;
 
-      // Wall/ceiling bounces
+      // Wall/ceiling bounces (Bouncy card)
       if (b.bounces > 0) {
-        if (b.x - b.radius < 0 || b.x + b.radius > ARENA_W) { b.vx = -b.vx; b.x = Math.max(b.radius, Math.min(ARENA_W - b.radius, b.x)); b.bounces--; }
-        if (b.y - b.radius < 0)                              { b.vy = -b.vy; b.y = b.radius; b.bounces--; }
+        if (b.x - b.radius < 0 || b.x + b.radius > ARENA_W) { b.vx = -b.vx; b.x = Math.max(b.radius, Math.min(ARENA_W - b.radius, b.x)); b.bounces--; b.hasBouncedOff = true; }
+        if (b.y - b.radius < 0)                              { b.vy = -b.vy; b.y = b.radius; b.bounces--; b.hasBouncedOff = true; }
       }
 
       // Platform collision -- bullets always bounce off platforms
@@ -805,39 +808,43 @@ export class Game {
       for (const plat of this.map.platforms) {
         if (b.x + b.radius > plat.x && b.x - b.radius < plat.x + plat.w &&
             b.y + b.radius > plat.y && b.y - b.radius < plat.y + plat.h) {
-          // Determine which face was hit by checking where the bullet came from
           const fromTop    = b.prevY + b.radius <= plat.y;
           const fromBottom = b.prevY - b.radius >= plat.y + plat.h;
           const fromLeft   = b.prevX + b.radius <= plat.x;
           const fromRight  = b.prevX - b.radius >= plat.x + plat.w;
           if (fromTop || fromBottom) {
+            // fromTop: bullet was above, bounce upward (-vy)
+            // fromBottom: bullet was below, bounce downward (+vy)
             b.vy = fromTop ? -Math.abs(b.vy) : Math.abs(b.vy);
             b.y  = fromTop ? plat.y - b.radius : plat.y + plat.h + b.radius;
           } else if (fromLeft || fromRight) {
-            b.vx = fromLeft ? Math.abs(b.vx) : -Math.abs(b.vx);
+            // fromLeft: bullet was left of platform, bounce left (-vx)
+            // fromRight: bullet was right of platform, bounce right (+vx)
+            b.vx = fromLeft ? -Math.abs(b.vx) : Math.abs(b.vx);
             b.x  = fromLeft ? plat.x - b.radius : plat.x + plat.w + b.radius;
           } else {
             b.vy = -b.vy;  // fallback: flip vertical
           }
+          b.hasBouncedOff = true;  // enables owner-hit after ricochet
           bouncedPlat = true;
           break;
         }
       }
       if (bouncedPlat) continue;
 
-      // Out of bounds (no bounces)
-      if (b.x < -100 || b.x > ARENA_W + 100 || b.y < -100 || b.y > ARENA_H + 100) {
+      // Lifetime and out-of-bounds expiry
+      b.lifetime -= dt;
+      if (b.lifetime <= 0 || b.x < -100 || b.x > ARENA_W + 100 || b.y < -100 || b.y > ARENA_H + 100) {
         this.bullets.splice(i, 1); continue;
       }
 
       // Hit player -- check both players (friendly fire enabled)
-      if (b.graceFrames > 0) b.graceFrames--;
+      // Owner can only be hit by their own bullet after it has bounced off something
       let bulletConsumed = false;
       for (let pi = 0; pi < 2; pi++) {
         const target = this.players[pi];
         if (!target || target.hp <= 0) continue;
-        // Grace period: owner can't be hit by their own bullet right after firing
-        if (pi === b.owner && b.graceFrames > 0) continue;
+        if (pi === b.owner && !b.hasBouncedOff) continue;
         const dx   = b.x - target.x;
         const dy   = b.y - target.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
