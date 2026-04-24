@@ -45,10 +45,14 @@
   </div>
 
   <script>
-    // Relay URL: override via ?relay=wss://... or auto-select ws/wss from page protocol
+    // Relay URL: override via ?relay=wss://...
+    // Default: wss path proxy when served over https, raw ws port for local dev
     const params = new URLSearchParams(location.search);
-    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    window.RELAY_URL = params.get('relay') || wsProto + '//' + location.hostname + ':8765';
+    const isHttps = location.protocol === 'https:';
+    window.RELAY_URL = params.get('relay') ||
+      (isHttps
+        ? 'wss://' + location.hostname + '/turns-relay'
+        : 'ws://' + location.hostname + ':8765');
   </script>
 
   <script type="importmap">

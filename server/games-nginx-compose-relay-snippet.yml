@@ -1,0 +1,21 @@
+# Add this service to nginx-subdomain-togneri-games/docker-compose.yaml
+# alongside the nginx-subdomain-togneri-games service.
+# Also add 'default' network to both services as shown below.
+
+  turns-relay:
+    build: ./relay
+    restart: unless-stopped
+    networks:
+      - default
+      - reverse-proxy
+
+# In the nginx-subdomain-togneri-games service, add:
+#   networks:
+#     - default
+#     - reverse-proxy
+
+# At the bottom of the file, add the default network:
+# networks:
+#   default: {}
+#   reverse-proxy:
+#     external: true

@@ -10,9 +10,10 @@ if [ ! -f "$CONFIG_FILE" ]; then
   echo ""
   read -p "Local games portal root (e.g. /home/you/games/games): " GAMES_ROOT
   read -p "SSH remote games root (e.g. user@host:/srv/nginx/games/www/games/): " REMOTE_GAMES
-  read -p "Remote relay directory (e.g. user@host:/srv/turns/relay): " REMOTE_RELAY
-  read -p "Remote Docker Compose directory for relay (e.g. user@host:/srv/turns): " REMOTE_COMPOSE
-  read -p "Relay service name in docker-compose.yml (e.g. relay): " RELAY_SERVICE
+  read -p "Remote relay directory (e.g. user@host:/srv/nginx/games/relay): " REMOTE_RELAY
+  read -p "Remote Docker Compose directory for relay (e.g. user@host:/srv/nginx/games): " REMOTE_COMPOSE
+  read -p "Relay service name in docker-compose.yml (e.g. turns-relay): " RELAY_SERVICE
+  read -p "Remote nginx conf path to update (e.g. user@host:/srv/nginx/games/conf/default.conf): " REMOTE_NGINX_CONF
 
   cat > "$CONFIG_FILE" <<EOF
 GAMES_ROOT="$GAMES_ROOT"
@@ -20,6 +21,7 @@ REMOTE_GAMES="$REMOTE_GAMES"
 REMOTE_RELAY="$REMOTE_RELAY"
 REMOTE_COMPOSE="$REMOTE_COMPOSE"
 RELAY_SERVICE="$RELAY_SERVICE"
+REMOTE_NGINX_CONF="$REMOTE_NGINX_CONF"
 EOF
   echo ""
   echo "Config saved to .deploy.conf"
@@ -65,7 +67,15 @@ if [ -d relay ] && [ -n "${REMOTE_RELAY}" ]; then
   COMPOSE_DIR="${REMOTE_COMPOSE#*:}"
   echo "Deploying relay server..."
   rsync -av relay/ "${REMOTE_RELAY}/"
+  if [ -n "${REMOTE_NGINX_CONF}" ] && [ -f server/nginx-games-default.conf ]; then
+    echo "Updating nginx conf..."
+    rsync -av server/nginx-games-default.conf "${REMOTE_NGINX_CONF}"
+  fi
+  if [ -f server/games-docker-compose.yaml ]; then
+    echo "Updating docker-compose..."
+    rsync -av server/games-docker-compose.yaml "${SSH_HOST}:${COMPOSE_DIR}/docker-compose.yaml"
+  fi
   ssh "${SSH_HOST}" \
-    "cd ${COMPOSE_DIR} && docker compose up -d --build ${RELAY_SERVICE} 2>&1 | tail -5"
-  echo "Relay deployed."
+    "cd ${COMPOSE_DIR} && docker compose up -d --build ${RELAY_SERVICE} && docker compose restart nginx-subdomain-togneri-games 2>&1 | tail -8"
+  echo "Relay and nginx deployed."
 fi
