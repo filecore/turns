@@ -808,15 +808,15 @@ export class Game {
 
   _draw(t) {
     const dt = this._dt || 0;
-    this.renderer.render(dt, t);
 
-    // Sync rendering
+    // Update meshes before rendering so Three.js sees current frame state
     if (this.state === 'fight' || this.state === 'match_end') {
       this.renderer.syncBullets(this.bullets);
       if (this.players[0]) this.renderer.updatePlayerMesh(0, this.players[0], this.players[0].aimAngle, t);
       if (this.players[1]) this.renderer.updatePlayerMesh(1, this.players[1], this.players[1].aimAngle, t);
     }
 
+    this.renderer.render(dt, t);
     this.ui.clear();
 
     if (this.state === 'lobby' || this.state === 'start_pick') {
