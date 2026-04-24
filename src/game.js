@@ -113,23 +113,22 @@ export class Game {
     window.addEventListener('keyup', e => {
       this._keys[e.code] = false;
     });
-    this.renderer.canvas.addEventListener('mousemove', e => {
+    // Use window for mouse events -- HUD canvas sits on top and blocks renderer canvas
+    window.addEventListener('mousemove', e => {
       const pos = this.renderer.screenToArena(e.clientX, e.clientY);
       this._mouseX = pos.x;
       this._mouseY = pos.y;
-    });
-    this.renderer.canvas.addEventListener('mousedown', e => {
-      this._onMouseDown(e);
-    });
-    this.renderer.canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-    // HUD canvas also catches clicks for card picker
-    this.ui.canvas.addEventListener('click', e => this._onOverlayClick(e));
-    this.ui.canvas.addEventListener('mousemove', e => {
       if (this.state === 'card_pick' || this.state === 'start_pick') {
-        this.cardHovered = this.ui.getCardPickerHover(this.cardOffer, e.offsetX, e.offsetY);
+        const r = this.ui.canvas.getBoundingClientRect();
+        this.cardHovered = this.ui.getCardPickerHover(this.cardOffer, e.clientX - r.left, e.clientY - r.top);
       }
     });
+    window.addEventListener('mousedown', e => {
+      this._onMouseDown(e);
+      const r = this.ui.canvas.getBoundingClientRect();
+      this._onOverlayClick(e.clientX - r.left, e.clientY - r.top);
+    });
+    window.addEventListener('contextmenu', e => e.preventDefault());
   }
 
   _onKeyDown(e) {
@@ -170,10 +169,7 @@ export class Game {
     if (e.button === 2) this._startBlock(p);
   }
 
-  _onOverlayClick(e) {
-    const mx = e.offsetX;
-    const my = e.offsetY;
-
+  _onOverlayClick(mx, my) {
     if (this.state === 'lobby') {
       if (this.lobbyState.mode === 'menu') {
         const action = this.ui.getLobbyClick(mx, my);
