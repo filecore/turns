@@ -28,6 +28,7 @@ export class Renderer {
     this._bgTex    = this._buildBgTexture();
     this._bgMesh   = this._buildBgMesh();
     this.scene.add(this._bgMesh);
+    this.scene.add(this._buildArenaBorder());
 
     // Groups for layered rendering
     this.platformGroup  = new THREE.Group();
@@ -65,6 +66,19 @@ export class Renderer {
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(ARENA_W / size, ARENA_H / size);
     return tex;
+  }
+
+  _buildArenaBorder() {
+    const pts = [
+      new THREE.Vector3(0,       0,       -5),
+      new THREE.Vector3(ARENA_W, 0,       -5),
+      new THREE.Vector3(ARENA_W, ARENA_H, -5),
+      new THREE.Vector3(0,       ARENA_H, -5),
+      new THREE.Vector3(0,       0,       -5),
+    ];
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const mat = new THREE.LineBasicMaterial({ color: 0x2a2a42, transparent: true, opacity: 0.9 });
+    return new THREE.Line(geo, mat);
   }
 
   _buildBgMesh() {
