@@ -278,8 +278,12 @@ export class Game {
 
   _sendInput() {
     if (!this.isOnline || this.isHost) return;
-    const p = this.players[1];
-    if (!p) return;
+    this._sendContinuousInput();
+  }
+
+  _sendContinuousInput() {
+    if (!this.isOnline || this.isHost) return;
+    const mouseAngle = Math.atan2(-(this._mouseY - (this.players[1]?.y || 450)), this._mouseX - (this.players[1]?.x || 800));
     this.net.send({
       type: 'input',
       keys: {
@@ -289,7 +293,7 @@ export class Game {
         shoot: !!this._keys['Numpad0'],
         block: !!this._keys['NumpadEnter'],
       },
-      mouseAngle: p.aimAngle,
+      mouseAngle,
     });
   }
 
@@ -532,7 +536,7 @@ export class Game {
   _tick(dt) {
     if (this.state !== 'fight') return;
 
-    // Overlay timer
+    // Overlay timer (runs on host only in online mode)
     if (this.overlayTimer > 0) {
       this.overlayTimer -= dt;
       if (this.overlayTimer <= 0 && this._overlayCallback) {
@@ -541,6 +545,12 @@ export class Game {
         this.overlayText = '';
         cb();
       }
+      return;
+    }
+
+    // Guest does not simulate -- it sends inputs and receives authoritative state
+    if (this.isOnline && !this.isHost) {
+      this._sendContinuousInput();
       return;
     }
 
@@ -588,10 +598,12 @@ export class Game {
 
     const isLocal = this.isLocal;
 
-    // Aim: P1 always follows mouse; in local mode P2 auto-aims toward P1
-    if (idx === 0 || (!isLocal && !this.isHost)) {
+    // Aim from local mouse: host controls P1, local mode P2 auto-aims toward P1
+    const hostControlsThis  = this.isHost  && idx === 0;
+    const localP2           = isLocal      && idx === 1;
+    if (hostControlsThis) {
       p.aimAngle = Math.atan2(-(this._mouseY - p.y), this._mouseX - p.x);
-    } else if (isLocal && idx === 1) {
+    } else if (localP2) {
       const opp = this.players[0];
       if (opp) p.aimAngle = Math.atan2(-(opp.y - p.y), opp.x - p.x);
     }
