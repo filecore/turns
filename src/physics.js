@@ -1,10 +1,10 @@
 // physics.js — gravity, platform collision, wall jump, double jump
 
-export const GRAVITY       = 2200;   // px/s^2
-export const TERMINAL_VEL  = 1800;   // px/s
-export const JUMP_VEL      = -780;
-export const WALL_JUMP_VX  = 520;
-export const WALL_JUMP_VY  = -680;
+export const GRAVITY       = 1400;   // px/s^2 — lower gives ~290-unit single jump, reachable platforms
+export const TERMINAL_VEL  = 1600;   // px/s
+export const JUMP_VEL      = -900;
+export const WALL_JUMP_VX  = 480;
+export const WALL_JUMP_VY  = -820;
 export const MOVE_SPEED    = 340;
 export const FRICTION      = 0.82;   // horizontal friction when grounded (per frame factor)
 
