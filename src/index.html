@@ -45,9 +45,10 @@
   </div>
 
   <script>
-    // Relay URL: override via query param ?relay=ws://... for hosted play
+    // Relay URL: override via ?relay=wss://... or auto-select ws/wss from page protocol
     const params = new URLSearchParams(location.search);
-    window.RELAY_URL = params.get('relay') || 'ws://' + location.hostname + ':8765';
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    window.RELAY_URL = params.get('relay') || wsProto + '//' + location.hostname + ':8765';
   </script>
 
   <script type="importmap">
