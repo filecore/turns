@@ -402,8 +402,8 @@ export class Game {
       const spawn = i === 0 ? this.map.spawnP1 : this.map.spawnP2;
       p.x = spawn.x; p.y = spawn.y; p.vx = 0; p.vy = 0;
       p.hp = p.maxHp; p.ammo = p.maxAmmo; p.reloading = false; p.reloadTimer = 0;
-      p.blocking = false; p.blockTimer = 0; p.shootTimer = 0;
-      p.tasteTimer = 0; p.pristineFired = false;
+      p.blocking = false; p.blockTimer = 0; p.blockDurationTimer = 0; p.shootTimer = 0;
+      p.tasteTimer = 0; p.pristineFired = false; p._decayQueue = null;
     }
 
     if (this.isOnline && this.isHost) {
