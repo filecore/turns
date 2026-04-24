@@ -188,6 +188,14 @@ export class Renderer {
     arm.position.set(0.5, 0, 0.09);
     root.add(arm);
 
+    // Back arm (hangs on the other side, static)
+    const backArmGeo = new THREE.PlaneGeometry(0.75, 0.13);
+    const backArmMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+    const backArm    = new THREE.Mesh(backArmGeo, backArmMat);
+    backArm.position.set(-0.45, 0.2, 0.08);
+    backArm.rotation.z = 0.55;
+    root.add(backArm);
+
     // Gun
     const gunGeo  = new THREE.PlaneGeometry(0.7, 0.25);
     const gunMat  = new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.DoubleSide });
@@ -212,7 +220,7 @@ export class Renderer {
     blockArc.visible = false;
     root.add(blockArc);
 
-    return { root, body, gun, arm, legL, legR, blockArc, color, baseRadius: 1 };
+    return { root, body, gun, arm, backArm, legL, legR, blockArc, color, baseRadius: 1 };
   }
 
   _buildLeg() {
