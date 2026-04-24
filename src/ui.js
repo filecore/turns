@@ -93,25 +93,31 @@ export class UI {
 
   _drawScoreDot(cx, cy, r, val, color) {
     const ctx = this.ctx;
+    // Background circle
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    if (val >= 1) {
-      ctx.fillStyle = color;
-    } else if (val >= 0.5) {
-      ctx.fillStyle = color;
-      // Half fill (fill top half)
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = '#333';
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, Math.PI, 0);
-      ctx.lineTo(cx, cy);
-      ctx.fillStyle = color;
-    } else {
-      ctx.fillStyle = '#333333';
-    }
+    ctx.fillStyle = '#333333';
     ctx.fill();
-    ctx.strokeStyle = '#666666';
+
+    if (val >= 1) {
+      // Full dot
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    } else if (val >= 0.5) {
+      // Half dot (right half filled)
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, r, -Math.PI / 2, Math.PI / 2);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = '#555555';
     ctx.lineWidth   = this._px(1.5);
     ctx.stroke();
   }
