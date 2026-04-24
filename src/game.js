@@ -273,6 +273,14 @@ export class Game {
       this._startFight();
       return;
     }
+    if (msg.type === 'fight_result' && !this.isHost) {
+      this._receiveFightResult(msg);
+      return;
+    }
+    if (msg.type === 'match_end' && !this.isHost) {
+      this.state = 'match_end';
+      return;
+    }
   }
 
   _genCode() {
@@ -431,8 +439,12 @@ export class Game {
     this.map = MAPS[msg.mapIdx] || randomMap();
     this.state = 'fight';
     this.bullets = [];
+    this.overlayText  = '';
+    this.overlayTimer = 0;
+    this._overlayCallback = null;
     this.renderer.buildPlatformMeshes(this.map.platforms);
     this.renderer.buildPlayerMeshes();
+    this._showOverlay('FIGHT', '', 1.2, () => {});
   }
 
   // ── Round / match logic ───────────────────────────────────────────────────────
@@ -445,6 +457,11 @@ export class Game {
 
     playDeath();
     const winColor = survivorIdx === 0 ? '#e63946' : '#457b9d';
+
+    if (this.isOnline && this.isHost) {
+      this.net.send({ type: 'fight_result', winnerIdx: survivorIdx });
+    }
+
     this._showOverlay(`Player ${survivorIdx + 1} wins`, '', 1.6, () => {
       if (survivor.score >= 5) {
         this._endMatch(survivorIdx);
@@ -460,6 +477,17 @@ export class Game {
 
   _endMatch(winnerIdx) {
     this.state = 'match_end';
+    if (this.isOnline && this.isHost) {
+      this.net.send({ type: 'match_end', winnerIdx });
+    }
+  }
+
+  _receiveFightResult(msg) {
+    const winColor = msg.winnerIdx === 0 ? '#e63946' : '#457b9d';
+    playDeath();
+    this._showOverlay(`Player ${msg.winnerIdx + 1} wins`, '', 1.6, () => {
+      this.overlayText = '';
+    }, winColor);
   }
 
   _goToLobby() {
