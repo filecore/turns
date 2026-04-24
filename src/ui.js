@@ -203,11 +203,16 @@ export class UI {
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // Title
-    ctx.fillStyle = isLocalPicker ? P_COLORS[pickerPlayerIdx] : '#888888';
+    const pColor = P_COLORS[pickerPlayerIdx] || '#ffffff';
     ctx.font      = this._font(30);
     ctx.textAlign = 'center';
-    const title = isLocalPicker ? 'Choose a card' : `Player ${pickerPlayerIdx + 1} is choosing...`;
-    ctx.fillText(title, cx, cy - this._px(200));
+    if (isLocalPicker) {
+      ctx.fillStyle = pColor;
+      ctx.fillText(`Player ${pickerPlayerIdx + 1}: Choose a card`, cx, cy - this._px(200));
+    } else {
+      ctx.fillStyle = '#888888';
+      ctx.fillText(`Player ${pickerPlayerIdx + 1} is choosing...`, cx, cy - this._px(200));
+    }
 
     const cardW = this._px(200);
     const cardH = this._px(280);

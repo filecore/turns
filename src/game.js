@@ -413,7 +413,8 @@ export class Game {
       this.net.send({ type: 'fight_start', mapIdx: MAPS.indexOf(this.map) });
     }
 
-    this._showOverlay('FIGHT', '', 1.2, () => {});
+    const hint = this.isLocal ? 'P1: WASD + Click     P2: Arrows + Numpad0' : '';
+    this._showOverlay('FIGHT', hint, 1.2, () => {});
   }
 
   _receiveFightStart(msg) {
