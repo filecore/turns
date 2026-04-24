@@ -62,7 +62,8 @@ function createPlayer(spawnX, spawnY) {
 
 let bulletIdCounter = 0;
 function createBullet(owner, x, y, vx, vy, radius, damage, bounces, homing) {
-  return { id: bulletIdCounter++, owner, x, y, vx, vy, radius, damage, bounces, homing, prevX: x, prevY: y };
+  // graceFrames: owner can't be hit by their own bullet for the first few frames
+  return { id: bulletIdCounter++, owner, x, y, vx, vy, radius, damage, bounces, homing, prevX: x, prevY: y, graceFrames: 4 };
 }
 
 // ── Main Game class ───────────────────────────────────────────────────────────
@@ -96,12 +97,14 @@ export class Game {
 
     this.lobbyState  = { mode: 'menu', roomCode: '', inputCode: '', error: '' };
 
-    this._keys       = {};
-    this._mouseAngle = 0;
-    this._mouseX     = 0;
-    this._mouseY     = 0;
-    this._prevTime   = 0;
-    this._frameId    = null;
+    this._keys        = {};
+    this._mouseAngle  = 0;
+    this._mouseX      = 0;
+    this._mouseY      = 0;
+    this._prevTime    = 0;
+    this._frameId     = null;
+    this._fightOver   = false;  // guard against double-death in same tick
+    this._pendingBlock = false; // guest right-click block flag
 
     this._bindInput();
   }
@@ -170,7 +173,16 @@ export class Game {
     if (!p || p.hp <= 0) return;
 
     if (e.button === 0) this._tryShoot(p, localIdx);
-    if (e.button === 2) this._startBlock(p);
+    if (e.button === 2) {
+      if (this.isOnline && !this.isHost) {
+        // Guest: signal block via next continuous input send
+        this._pendingBlock = true;
+        this._sendContinuousInput();
+        this._pendingBlock = false;
+      } else {
+        this._startBlock(p);
+      }
+    }
   }
 
   _onOverlayClick(mx, my) {
@@ -307,7 +319,7 @@ export class Game {
         right: !!this._keys['ArrowRight'],
         jump:  !!this._keys['ArrowUp'],
         shoot: !!this._keys['Numpad0'],
-        block: !!this._keys['NumpadEnter'],
+        block: !!(this._keys['NumpadEnter'] || this._pendingBlock),
       },
       mouseAngle,
     });
@@ -334,12 +346,25 @@ export class Game {
       blocking: p.blocking, blockTimer: p.blockTimer, blockCooldown: p.blockCooldown,
       radius: p.radius, aimAngle: p.aimAngle, onGround: p.onGround,
       score: p.score, fightWins: p.fightWins, landTimer: p.landTimer || 0,
+      cards: (p.cards || []).map(c => c.id),
     };
   }
 
   _applyRemoteState(msg) {
-    if (msg.p1 && this.players[0]) Object.assign(this.players[0], msg.p1);
-    if (msg.p2 && this.players[1]) Object.assign(this.players[1], msg.p2);
+    if (msg.p1 && this.players[0]) {
+      const prev = this.players[0].cards;
+      Object.assign(this.players[0], msg.p1);
+      this.players[0].cards = Array.isArray(msg.p1.cards)
+        ? msg.p1.cards.map(id => CARDS.find(c => c.id === id)).filter(Boolean)
+        : prev;
+    }
+    if (msg.p2 && this.players[1]) {
+      const prev = this.players[1].cards;
+      Object.assign(this.players[1], msg.p2);
+      this.players[1].cards = Array.isArray(msg.p2.cards)
+        ? msg.p2.cards.map(id => CARDS.find(c => c.id === id)).filter(Boolean)
+        : prev;
+    }
     this.bullets = msg.bullets || [];
   }
 
@@ -372,11 +397,15 @@ export class Game {
     this.state     = 'start_pick';
     this.cardOffer = msg.offer.map(id => CARDS.find(c => c.id === id));
     this.pickerIdx = msg.pickerIdx;
-    this.startPickPhase = 0;
-    const spawn = randomMap();
-    this.map = spawn;
-    this.players[0] = createPlayer(spawn.spawnP1.x, spawn.spawnP1.y);
-    this.players[1] = createPlayer(spawn.spawnP2.x, spawn.spawnP2.y);
+    // phase mirrors pickerIdx so guest's _advanceStartPickOrFight logic is correct
+    this.startPickPhase = msg.pickerIdx;
+    // Only create players on first start_pick -- second call (P2's turn) must not wipe P1's card
+    if (!this.players[0]) {
+      const spawn = randomMap();
+      this.map = spawn;
+      this.players[0] = createPlayer(spawn.spawnP1.x, spawn.spawnP1.y);
+      this.players[1] = createPlayer(spawn.spawnP2.x, spawn.spawnP2.y);
+    }
   }
 
   _pickCard(idx) {
@@ -418,6 +447,8 @@ export class Game {
   _startFight() {
     this.state = 'fight';
     this.bullets = [];
+    this._dmgNumbers = [];
+    this._fightOver = false;
     this.map = randomMap();
     this.renderer.buildPlatformMeshes(this.map.platforms);
     this.renderer.buildPlayerMeshes();
@@ -444,6 +475,8 @@ export class Game {
     this.map = MAPS[msg.mapIdx] || randomMap();
     this.state = 'fight';
     this.bullets = [];
+    this._dmgNumbers = [];
+    this._fightOver = false;
     this.overlayText  = '';
     this.overlayTimer = 0;
     this._overlayCallback = null;
@@ -455,6 +488,8 @@ export class Game {
   // ── Round / match logic ───────────────────────────────────────────────────────
 
   _onPlayerDied(deadIdx) {
+    if (this._fightOver) return;
+    this._fightOver = true;
     const survivorIdx = 1 - deadIdx;
     const survivor = this.players[survivorIdx];
     survivor.fightWins = (survivor.fightWins || 0) + 1;
@@ -631,7 +666,7 @@ export class Game {
 
     this._updatePlayer(p1, 0, dt, p2);
     this._updatePlayer(p2, 1, dt, p1);
-    this._updateBullets(dt, p1, p2);
+    this._updateBullets(dt);
   }
 
   _updatePlayer(p, idx, dt, opponent) {
@@ -737,14 +772,14 @@ export class Game {
     if (p.onGround) p.vx *= Math.pow(FRICTION, dt * 60);
   }
 
-  _updateBullets(dt, p1, p2) {
+  _updateBullets(dt) {
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i];
       b.prevX = b.x; b.prevY = b.y;
 
-      // Homing
+      // Homing -- targets the opponent (other player)
       if (b.homing) {
-        const target = b.owner === 0 ? p2 : p1;
+        const target = this.players[1 - b.owner];
         if (target && target.hp > 0) {
           const dx = target.x - b.x;
           const dy = target.y - b.y;
@@ -765,46 +800,65 @@ export class Game {
         if (b.y - b.radius < 0)                              { b.vy = -b.vy; b.y = b.radius; b.bounces--; }
       }
 
-      // Platform bounce/stop
-      let hitPlat = false;
+      // Platform collision -- bullets always bounce off platforms
+      let bouncedPlat = false;
       for (const plat of this.map.platforms) {
         if (b.x + b.radius > plat.x && b.x - b.radius < plat.x + plat.w &&
             b.y + b.radius > plat.y && b.y - b.radius < plat.y + plat.h) {
-          if (b.bounces > 0) { b.vy = -Math.abs(b.vy); b.bounces--; b.y = plat.y - b.radius; }
-          else { hitPlat = true; }
+          // Determine which face was hit by checking where the bullet came from
+          const fromTop    = b.prevY + b.radius <= plat.y;
+          const fromBottom = b.prevY - b.radius >= plat.y + plat.h;
+          const fromLeft   = b.prevX + b.radius <= plat.x;
+          const fromRight  = b.prevX - b.radius >= plat.x + plat.w;
+          if (fromTop || fromBottom) {
+            b.vy = fromTop ? -Math.abs(b.vy) : Math.abs(b.vy);
+            b.y  = fromTop ? plat.y - b.radius : plat.y + plat.h + b.radius;
+          } else if (fromLeft || fromRight) {
+            b.vx = fromLeft ? Math.abs(b.vx) : -Math.abs(b.vx);
+            b.x  = fromLeft ? plat.x - b.radius : plat.x + plat.w + b.radius;
+          } else {
+            b.vy = -b.vy;  // fallback: flip vertical
+          }
+          bouncedPlat = true;
           break;
         }
       }
-      if (hitPlat) { this.bullets.splice(i, 1); continue; }
+      if (bouncedPlat) continue;
 
       // Out of bounds (no bounces)
       if (b.x < -100 || b.x > ARENA_W + 100 || b.y < -100 || b.y > ARENA_H + 100) {
         this.bullets.splice(i, 1); continue;
       }
 
-      // Hit player
-      const target = b.owner === 0 ? p2 : p1;
-      const targetIdx = b.owner === 0 ? 1 : 0;
-      if (target && target.hp > 0) {
+      // Hit player -- check both players (friendly fire enabled)
+      if (b.graceFrames > 0) b.graceFrames--;
+      let bulletConsumed = false;
+      for (let pi = 0; pi < 2; pi++) {
+        const target = this.players[pi];
+        if (!target || target.hp <= 0) continue;
+        // Grace period: owner can't be hit by their own bullet right after firing
+        if (pi === b.owner && b.graceFrames > 0) continue;
         const dx   = b.x - target.x;
         const dy   = b.y - target.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < b.radius + target.radius) {
           if (target.blocking) {
-            // Deflect
-            b.vx = -b.vx; b.vy = -b.vy; b.owner = targetIdx;
+            b.vx = -b.vx; b.vy = -b.vy; b.owner = pi;
             this.renderer.triggerShake(3, 0.1);
           } else {
-            this._dealDamage(b, target, targetIdx, b.owner);
+            this._dealDamage(b, target, pi, b.owner);
             this.bullets.splice(i, 1);
+            bulletConsumed = true;
           }
+          break;
         }
       }
+      if (bulletConsumed) continue;
     }
   }
 
   _dealDamage(bullet, target, targetIdx, shooterIdx) {
-    const shooter = this.players[shooterIdx];
+    const shooter = (shooterIdx >= 0 && shooterIdx < 2) ? this.players[shooterIdx] : null;
     let dmg = bullet.damage;
 
     if (target.damageDecay) {
