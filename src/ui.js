@@ -309,7 +309,7 @@ export class UI {
     if (state.mode === 'menu') {
       this._drawButton(ctx, cx, cy - this._px(60), 'HOST GAME', '#e63946');
       this._drawButton(ctx, cx, cy + this._px(20), 'JOIN GAME', '#457b9d');
-      this._drawButton(ctx, cx, cy + this._px(100), 'LOCAL (vs AI)', '#668844');
+      this._drawButton(ctx, cx, cy + this._px(100), 'LOCAL 2-PLAYER', '#668844');
 
     } else if (state.mode === 'hosting') {
       ctx.fillStyle = '#aaaaaa';

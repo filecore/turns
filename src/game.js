@@ -146,8 +146,17 @@ export class Game {
     if (this.state === 'fight') {
       const p = this.isHost ? this.players[0] : this.players[1];
       if (!p || p.hp <= 0) return;
-      if (e.code === 'KeyW' || e.code === 'ArrowUp') {
-        if (doJump(p)) this._sendInput();
+      if (e.code === 'KeyW') {
+        const target = this.isHost || this.isLocal ? this.players[0] : this.players[1];
+        if (target && target.hp > 0) { doJump(target); this._sendInput(); }
+      }
+      if (e.code === 'ArrowUp') {
+        if (this.isLocal) {
+          const p2 = this.players[1];
+          if (p2 && p2.hp > 0) doJump(p2);
+        } else if (!this.isHost) {
+          if (p && p.hp > 0) { doJump(p); this._sendInput(); }
+        }
       }
     }
   }
@@ -561,10 +570,14 @@ export class Game {
       p.pristineFired = true;
     }
 
-    // Aim angle toward mouse (host controls p1, guest controls p2)
     const isLocal = this.isLocal;
-    if ((idx === 0 && this.isHost) || (idx === 1 && !this.isHost) || isLocal) {
+
+    // Aim: P1 always follows mouse; in local mode P2 auto-aims toward P1
+    if (idx === 0 || (!isLocal && !this.isHost)) {
       p.aimAngle = Math.atan2(-(this._mouseY - p.y), this._mouseX - p.x);
+    } else if (isLocal && idx === 1) {
+      const opp = this.players[0];
+      if (opp) p.aimAngle = Math.atan2(-(opp.y - p.y), opp.x - p.x);
     }
 
     // Movement input
@@ -590,9 +603,8 @@ export class Game {
       this.pendingInput = null;
     }
 
-    // Shoot / block for p0 (host local control)
+    // Block for P1 via Shift (shoot comes from mousedown)
     if ((idx === 0 && this.isHost) || (isLocal && idx === 0)) {
-      if (this._keys['Space']) this._tryShoot(p, 0);
       if (this._keys['ShiftLeft'] || this._keys['ShiftRight']) this._startBlock(p);
     }
     if (isLocal && idx === 1) {
@@ -741,10 +753,12 @@ export class Game {
       this._broadcastState();
     }
 
+    this._dt = dt;
     this._draw(t);
   }
 
   _draw(t) {
+    const dt = this._dt || 0;
     this.renderer.render(dt, t);
 
     // Sync rendering
