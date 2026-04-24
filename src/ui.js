@@ -193,7 +193,7 @@ export class UI {
 
   // ── Card picker ─────────────────────────────────────────────────────────────
 
-  drawCardPicker(cards, hoveredIdx, pickerPlayerIdx, isLocalPicker) {
+  drawCardPicker(cards, hoveredIdx, pickerPlayerIdx, isLocalPicker, existingCards = []) {
     const ctx = this.ctx;
     const cx  = this.canvas.width  / 2;
     const cy  = this.canvas.height / 2;
@@ -212,6 +212,15 @@ export class UI {
     } else {
       ctx.fillStyle = '#888888';
       ctx.fillText(`Player ${pickerPlayerIdx + 1} is choosing...`, cx, cy - this._px(200));
+    }
+
+    // Existing cards strip
+    if (existingCards.length > 0) {
+      ctx.font      = this._font(13, 'normal');
+      ctx.textAlign = 'center';
+      const labels = existingCards.map(c => c.name).join('  |  ');
+      ctx.fillStyle = '#666666';
+      ctx.fillText(labels, cx, cy - this._px(168));
     }
 
     const cardW = this._px(200);

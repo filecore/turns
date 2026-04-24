@@ -830,7 +830,8 @@ export class Game {
       if (this.state === 'start_pick') {
         ls.mode = 'start_pick';
         const isLocalPicker = this.isLocal || (this.isHost && this.pickerIdx === 0) || (!this.isHost && this.pickerIdx === 1);
-        this.ui.drawCardPicker(this.cardOffer, this.cardHovered, this.pickerIdx, isLocalPicker);
+        const pickerCards = this.players[this.pickerIdx]?.cards || [];
+        this.ui.drawCardPicker(this.cardOffer, this.cardHovered, this.pickerIdx, isLocalPicker, pickerCards);
       } else {
         this.ui.drawLobby(ls);
       }
@@ -853,7 +854,8 @@ export class Game {
 
     if (this.state === 'card_pick') {
       const isLocalPicker = this.isLocal || (this.isHost && this.pickerIdx === 0) || (!this.isHost && this.pickerIdx === 1);
-      this.ui.drawCardPicker(this.cardOffer, this.cardHovered, this.pickerIdx, isLocalPicker);
+      const pickerCards = this.players[this.pickerIdx]?.cards || [];
+      this.ui.drawCardPicker(this.cardOffer, this.cardHovered, this.pickerIdx, isLocalPicker, pickerCards);
     }
 
     if (this.state === 'match_end') {
