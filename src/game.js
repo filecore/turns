@@ -915,13 +915,13 @@ export class Game {
           break;
         }
       }
-      if (bouncedPlat) continue;
-
-      // Lifetime and out-of-bounds expiry
+      // Lifetime and out-of-bounds expiry -- always runs, even on bounce frames
       b.lifetime -= dt;
       if (b.lifetime <= 0 || b.x < -100 || b.x > ARENA_W + 100 || b.y < -100 || b.y > ARENA_H + 100) {
         this.bullets.splice(i, 1); continue;
       }
+
+      if (bouncedPlat) continue;  // skip hit check; bullet persists until next frame
 
       // Hit player -- check both players (friendly fire enabled)
       // Owner can only be hit by their own bullet after it has bounced off something
