@@ -192,6 +192,10 @@ export class Game {
       const picked = this.ui.getCardPickerClick(this.cardOffer, mx, my);
       if (picked >= 0) this._pickCardRound(picked);
     }
+
+    if (this.state === 'match_end') {
+      this._goToLobby();
+    }
   }
 
   // ── Networking ────────────────────────────────────────────────────────────────
@@ -441,6 +445,17 @@ export class Game {
 
   _endMatch(winnerIdx) {
     this.state = 'match_end';
+  }
+
+  _goToLobby() {
+    this.state      = 'lobby';
+    this.isLocal    = false;
+    this.isOnline   = false;
+    this.isHost     = true;
+    this.players    = [null, null];
+    this.bullets    = [];
+    this.lobbyState = { mode: 'menu', roomCode: '', inputCode: '', error: '' };
+    if (this.net) { this.net.disconnect(); this.net = null; }
   }
 
   _startCardPick(loserIdx) {

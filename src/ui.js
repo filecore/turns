@@ -186,6 +186,9 @@ export class UI {
     ctx.fillStyle = '#ffffff';
     ctx.font      = this._font(32, 'normal');
     ctx.fillText(`Player ${playerIdx + 1} wins the match`, cx, cy + this._px(40));
+    ctx.fillStyle = '#666666';
+    ctx.font      = this._font(18, 'normal');
+    ctx.fillText('Click to return to menu', cx, cy + this._px(100));
   }
 
   // ── Card picker ─────────────────────────────────────────────────────────────
