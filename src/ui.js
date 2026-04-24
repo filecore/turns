@@ -50,6 +50,12 @@ export class UI {
     const y    = this._px(player.y - player.radius - 10) - barH;
     const x    = cx - barW / 2;
     const frac = Math.max(0, player.hp / player.maxHp);
+
+    // P1 / P2 label above the bar
+    ctx.fillStyle  = P_COLORS[idx];
+    ctx.font       = this._font(11, 'normal');
+    ctx.textAlign  = 'center';
+    ctx.fillText(`P${idx + 1}`, cx, y - this._px(3));
     ctx.fillStyle = '#333333';
     ctx.fillRect(x, y, barW, barH);
     ctx.fillStyle = P_COLORS[idx];
@@ -175,6 +181,32 @@ export class UI {
   }
 
   // ── Floating damage numbers ─────────────────────────────────────────────────
+
+  // ── Card strip (bottom corners, shows active cards per player) ─────────────
+
+  drawCardStrips(p1Cards, p2Cards) {
+    const ctx  = this.ctx;
+    const bh   = this.canvas.height;
+    const pad  = this._px(10);
+    const lineH = this._px(14);
+
+    ctx.font      = this._font(10, 'normal');
+    ctx.textAlign = 'left';
+    ctx.fillStyle = P_COLORS[0];
+    p1Cards.forEach((c, i) => {
+      ctx.globalAlpha = 0.7;
+      ctx.fillText(c.name, pad, bh - pad - (p1Cards.length - 1 - i) * lineH);
+    });
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = P_COLORS[1];
+    p2Cards.forEach((c, i) => {
+      ctx.fillText(c.name, this.canvas.width - pad, bh - pad - (p2Cards.length - 1 - i) * lineH);
+    });
+
+    ctx.globalAlpha = 1;
+    ctx.textAlign   = 'left';
+  }
 
   drawDamageNumbers(numbers) {
     const ctx = this.ctx;

@@ -894,6 +894,7 @@ export class Game {
         this.ui.drawHealthBars(p1, p2);
         this.ui.drawScores(p1.score, p2.score);
         this.ui.drawAmmo(p1, p2);
+        this.ui.drawCardStrips(p1.cards || [], p2.cards || []);
       }
       if (this._dmgNumbers.length > 0) this.ui.drawDamageNumbers(this._dmgNumbers);
       if (this.overlayText) {
