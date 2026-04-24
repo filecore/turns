@@ -67,14 +67,15 @@ if [ -d relay ] && [ -n "${REMOTE_RELAY}" ]; then
   COMPOSE_DIR="${REMOTE_COMPOSE#*:}"
 
   # Only redeploy relay/nginx if files actually changed (checksum comparison)
-  RELAY_CHANGES=$(rsync --checksum --itemize-changes --dry-run relay/ "${REMOTE_RELAY}/" 2>/dev/null | grep -c '^[<>c]' || echo 0)
+  # Use grep | wc -l rather than grep -c: wc -l always exits 0, safe with set -e
+  RELAY_CHANGES=$(rsync --checksum --itemize-changes --dry-run relay/ "${REMOTE_RELAY}/" 2>/dev/null | grep '^[<>c]' | wc -l)
   CONF_CHANGES=0
   COMPOSE_CHANGES=0
   if [ -n "${REMOTE_NGINX_CONF}" ] && [ -f server/nginx-games-default.conf ]; then
-    CONF_CHANGES=$(rsync --checksum --itemize-changes --dry-run server/nginx-games-default.conf "${REMOTE_NGINX_CONF}" 2>/dev/null | grep -c '^[<>c]' || echo 0)
+    CONF_CHANGES=$(rsync --checksum --itemize-changes --dry-run server/nginx-games-default.conf "${REMOTE_NGINX_CONF}" 2>/dev/null | grep '^[<>c]' | wc -l)
   fi
   if [ -f server/games-docker-compose.yaml ]; then
-    COMPOSE_CHANGES=$(rsync --checksum --itemize-changes --dry-run server/games-docker-compose.yaml "${SSH_HOST}:${COMPOSE_DIR}/docker-compose.yaml" 2>/dev/null | grep -c '^[<>c]' || echo 0)
+    COMPOSE_CHANGES=$(rsync --checksum --itemize-changes --dry-run server/games-docker-compose.yaml "${SSH_HOST}:${COMPOSE_DIR}/docker-compose.yaml" 2>/dev/null | grep '^[<>c]' | wc -l)
   fi
 
   TOTAL_CHANGES=$((RELAY_CHANGES + CONF_CHANGES + COMPOSE_CHANGES))
