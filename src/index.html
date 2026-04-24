@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Turns</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d0d10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      font-family: 'Rajdhani', sans-serif;
+    }
+    #wrap {
+      position: relative;
+    }
+    #three-canvas {
+      display: block;
+      position: absolute;
+      top: 0; left: 0;
+    }
+    #hud-canvas {
+      display: block;
+      position: absolute;
+      top: 0; left: 0;
+      pointer-events: none;
+    }
+    /* HUD canvas captures clicks when we need it */
+    #hud-canvas.interactive {
+      pointer-events: auto;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="three-canvas"></canvas>
+    <canvas id="hud-canvas" class="interactive"></canvas>
+  </div>
+
+  <script>
+    // Relay URL: override via query param ?relay=ws://... for hosted play
+    const params = new URLSearchParams(location.search);
+    window.RELAY_URL = params.get('relay') || 'ws://' + location.hostname + ':8765';
+  </script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import { Game } from './game.js';
+
+    const threeCanvas = document.getElementById('three-canvas');
+    const hudCanvas   = document.getElementById('hud-canvas');
+
+    // Size the wrap div to match the rendered canvas after first resize
+    function sizeWrap() {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const s  = Math.min(vw / 1600, vh / 900);
+      const w  = Math.round(1600 * s);
+      const h  = Math.round(900 * s);
+      document.getElementById('wrap').style.width  = w + 'px';
+      document.getElementById('wrap').style.height = h + 'px';
+    }
+    sizeWrap();
+    window.addEventListener('resize', sizeWrap);
+
+    const game = new Game(threeCanvas, hudCanvas);
+    game.start();
+  </script>
+</body>
+</html>
