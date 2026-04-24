@@ -104,8 +104,9 @@ export class Game {
     this._mouseY      = 0;
     this._prevTime    = 0;
     this._frameId     = null;
-    this._fightOver   = false;  // guard against double-death in same tick
-    this._pendingBlock = false; // guest right-click block flag
+    this._fightOver    = false;  // guard against double-death in same tick
+    this._pendingBlock = false;  // guest right-click block flag
+    this.matchWinner   = 0;
 
     this._bindInput();
   }
@@ -297,7 +298,8 @@ export class Game {
       return;
     }
     if (msg.type === 'match_end' && !this.isHost) {
-      this.state = 'match_end';
+      this.state       = 'match_end';
+      this.matchWinner = msg.winnerIdx;
       return;
     }
   }
@@ -354,19 +356,26 @@ export class Game {
   }
 
   _applyRemoteState(msg) {
-    if (msg.p1 && this.players[0]) {
-      const prev = this.players[0].cards;
-      Object.assign(this.players[0], msg.p1);
-      this.players[0].cards = Array.isArray(msg.p1.cards)
-        ? msg.p1.cards.map(id => CARDS.find(c => c.id === id)).filter(Boolean)
-        : prev;
-    }
-    if (msg.p2 && this.players[1]) {
-      const prev = this.players[1].cards;
-      Object.assign(this.players[1], msg.p2);
-      this.players[1].cards = Array.isArray(msg.p2.cards)
-        ? msg.p2.cards.map(id => CARDS.find(c => c.id === id)).filter(Boolean)
-        : prev;
+    for (const [pi, key] of [[0, 'p1'], [1, 'p2']]) {
+      const snap   = msg[key];
+      const player = this.players[pi];
+      if (!snap || !player) continue;
+
+      const prevHp   = player.hp;
+      const prevCards = player.cards;
+      Object.assign(player, snap);
+      player.cards = Array.isArray(snap.cards)
+        ? snap.cards.map(id => CARDS.find(c => c.id === id)).filter(Boolean)
+        : prevCards;
+
+      const delta = prevHp - player.hp;
+      if (delta > 0 && prevHp > 0) {
+        const col = pi === 0 ? '#e63946' : '#457b9d';
+        this._dmgNumbers.push({ x: player.x, y: player.y - player.radius, amount: Math.round(delta), timer: 0.9, color: col });
+        this.renderer.spawnHitBurst(player.x, player.y, pi === 0 ? 0xe63946 : 0x457b9d);
+        this.renderer.triggerShake(5, 0.18);
+        playHit();
+      }
     }
     this.bullets = msg.bullets || [];
   }
@@ -499,6 +508,12 @@ export class Game {
     survivor.score    += 0.5;
 
     playDeath();
+    const dead = this.players[deadIdx];
+    if (dead) {
+      const deathColor = deadIdx === 0 ? 0xe63946 : 0x457b9d;
+      this.renderer.spawnDeathBurst(dead.x, dead.y, deathColor);
+      this.renderer.triggerShake(10, 0.35);
+    }
     const winColor = survivorIdx === 0 ? '#e63946' : '#457b9d';
 
     if (this.isOnline && this.isHost) {
@@ -519,7 +534,8 @@ export class Game {
   }
 
   _endMatch(winnerIdx) {
-    this.state = 'match_end';
+    this.state       = 'match_end';
+    this.matchWinner = winnerIdx;
     if (this.isOnline && this.isHost) {
       this.net.send({ type: 'match_end', winnerIdx });
     }
@@ -527,7 +543,14 @@ export class Game {
 
   _receiveFightResult(msg) {
     const winColor = msg.winnerIdx === 0 ? '#e63946' : '#457b9d';
+    const deadIdx  = 1 - msg.winnerIdx;
+    const dead     = this.players[deadIdx];
     playDeath();
+    if (dead) {
+      const deathColor = deadIdx === 0 ? 0xe63946 : 0x457b9d;
+      this.renderer.spawnDeathBurst(dead.x, dead.y, deathColor);
+      this.renderer.triggerShake(10, 0.35);
+    }
     this._showOverlay(`Player ${msg.winnerIdx + 1} wins`, '', 1.6, () => {
       this.overlayText = '';
     }, winColor);
@@ -984,8 +1007,7 @@ export class Game {
     }
 
     if (this.state === 'match_end') {
-      const winnerIdx = this.players[0].score >= 5 ? 0 : 1;
-      this.ui.drawWinner(winnerIdx);
+      this.ui.drawWinner(this.matchWinner, this.players[0]?.score || 0, this.players[1]?.score || 0);
     }
 
     this.ui.drawFooter();

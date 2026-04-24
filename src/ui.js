@@ -266,7 +266,7 @@ export class UI {
     }
   }
 
-  drawWinner(playerIdx) {
+  drawWinner(playerIdx, score1 = 0, score2 = 0) {
     const ctx   = this.ctx;
     const cx    = this.canvas.width  / 2;
     const cy    = this.canvas.height / 2;
@@ -279,9 +279,23 @@ export class UI {
     ctx.fillStyle = '#ffffff';
     ctx.font      = this._font(32, 'normal');
     ctx.fillText(`Player ${playerIdx + 1} wins the match`, cx, cy + this._px(40));
-    ctx.fillStyle = '#666666';
+
+    // Final scores
+    ctx.font      = this._font(26, 'normal');
+    ctx.fillStyle = P_COLORS[0];
+    ctx.textAlign = 'right';
+    ctx.fillText(`P1  ${score1}`, cx - this._px(14), cy + this._px(90));
+    ctx.fillStyle = '#555555';
+    ctx.textAlign = 'center';
+    ctx.fillText('|', cx, cy + this._px(90));
+    ctx.fillStyle = P_COLORS[1];
+    ctx.textAlign = 'left';
+    ctx.fillText(`${score2}  P2`, cx + this._px(14), cy + this._px(90));
+
+    ctx.fillStyle = '#555555';
     ctx.font      = this._font(18, 'normal');
-    ctx.fillText('Click to return to menu', cx, cy + this._px(100));
+    ctx.textAlign = 'center';
+    ctx.fillText('Click to return to menu', cx, cy + this._px(140));
   }
 
   // ── Card picker ─────────────────────────────────────────────────────────────
