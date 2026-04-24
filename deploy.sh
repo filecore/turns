@@ -65,17 +65,32 @@ if [ -d relay ] && [ -n "${REMOTE_RELAY}" ]; then
   SSH_HOST="${REMOTE_RELAY%%:*}"
   RELAY_DIR="${REMOTE_RELAY#*:}"
   COMPOSE_DIR="${REMOTE_COMPOSE#*:}"
-  echo "Deploying relay server..."
-  rsync -av relay/ "${REMOTE_RELAY}/"
+
+  # Only redeploy relay/nginx if files actually changed (checksum comparison)
+  RELAY_CHANGES=$(rsync --checksum --itemize-changes --dry-run relay/ "${REMOTE_RELAY}/" 2>/dev/null | grep -c '^[<>c]' || echo 0)
+  CONF_CHANGES=0
+  COMPOSE_CHANGES=0
   if [ -n "${REMOTE_NGINX_CONF}" ] && [ -f server/nginx-games-default.conf ]; then
-    echo "Updating nginx conf..."
-    rsync -av server/nginx-games-default.conf "${REMOTE_NGINX_CONF}"
+    CONF_CHANGES=$(rsync --checksum --itemize-changes --dry-run server/nginx-games-default.conf "${REMOTE_NGINX_CONF}" 2>/dev/null | grep -c '^[<>c]' || echo 0)
   fi
   if [ -f server/games-docker-compose.yaml ]; then
-    echo "Updating docker-compose..."
-    rsync -av server/games-docker-compose.yaml "${SSH_HOST}:${COMPOSE_DIR}/docker-compose.yaml"
+    COMPOSE_CHANGES=$(rsync --checksum --itemize-changes --dry-run server/games-docker-compose.yaml "${SSH_HOST}:${COMPOSE_DIR}/docker-compose.yaml" 2>/dev/null | grep -c '^[<>c]' || echo 0)
   fi
-  ssh "${SSH_HOST}" \
-    "cd ${COMPOSE_DIR} && docker compose up -d --build ${RELAY_SERVICE} && docker compose restart nginx-subdomain-togneri-games 2>&1 | tail -8"
-  echo "Relay and nginx deployed."
+
+  TOTAL_CHANGES=$((RELAY_CHANGES + CONF_CHANGES + COMPOSE_CHANGES))
+  if [ "$TOTAL_CHANGES" -gt 0 ]; then
+    echo "Relay/nginx changes detected ($TOTAL_CHANGES file(s)). Deploying..."
+    rsync -av relay/ "${REMOTE_RELAY}/"
+    if [ -n "${REMOTE_NGINX_CONF}" ] && [ -f server/nginx-games-default.conf ]; then
+      rsync -av server/nginx-games-default.conf "${REMOTE_NGINX_CONF}"
+    fi
+    if [ -f server/games-docker-compose.yaml ]; then
+      rsync -av server/games-docker-compose.yaml "${SSH_HOST}:${COMPOSE_DIR}/docker-compose.yaml"
+    fi
+    ssh "${SSH_HOST}" \
+      "cd ${COMPOSE_DIR} && docker compose up -d --build ${RELAY_SERVICE} && docker compose restart nginx-subdomain-togneri-games 2>&1 | tail -8"
+    echo "Relay and nginx deployed."
+  else
+    echo "Relay/nginx unchanged, skipping restart."
+  fi
 fi
