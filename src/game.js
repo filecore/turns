@@ -312,7 +312,13 @@ export class Game {
 
   _snapPlayer(p) {
     if (!p) return null;
-    return { x: p.x, y: p.y, vx: p.vx, vy: p.vy, hp: p.hp, maxHp: p.maxHp, ammo: p.ammo, maxAmmo: p.maxAmmo, reloading: p.reloading, blocking: p.blocking, radius: p.radius };
+    return {
+      x: p.x, y: p.y, vx: p.vx, vy: p.vy,
+      hp: p.hp, maxHp: p.maxHp,
+      ammo: p.ammo, maxAmmo: p.maxAmmo,
+      reloading: p.reloading, blocking: p.blocking,
+      radius: p.radius, aimAngle: p.aimAngle, onGround: p.onGround,
+    };
   }
 
   _applyRemoteState(msg) {
