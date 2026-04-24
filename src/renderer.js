@@ -181,19 +181,26 @@ export class Renderer {
     eyeR.position.set( 0.3, -0.2, 0.1);
     root.add(eyeL, eyeR);
 
-    // Gun (small rectangle attached to arm direction)
+    // Arm (thick rectangle pointing toward gun)
+    const armGeo  = new THREE.PlaneGeometry(0.85, 0.13);
+    const armMat  = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+    const arm     = new THREE.Mesh(armGeo, armMat);
+    arm.position.set(0.5, 0, 0.09);
+    root.add(arm);
+
+    // Gun
     const gunGeo  = new THREE.PlaneGeometry(0.7, 0.25);
     const gunMat  = new THREE.MeshBasicMaterial({ color: 0x222222, side: THREE.DoubleSide });
     const gun     = new THREE.Mesh(gunGeo, gunMat);
-    gun.position.set(1.0, 0, 0.1);
+    gun.position.set(1.1, 0, 0.1);
     root.add(gun);
 
-    // Left leg group
-    const legL = this._buildLeg(color);
+    // Legs (thick rectangles, pivot at hip)
+    const legL = this._buildLeg();
     legL.position.set(-0.3, 0.8, 0.05);
     root.add(legL);
 
-    const legR = this._buildLeg(color);
+    const legR = this._buildLeg();
     legR.position.set( 0.3, 0.8, 0.05);
     root.add(legR);
 
@@ -205,15 +212,18 @@ export class Renderer {
     blockArc.visible = false;
     root.add(blockArc);
 
-    return { root, body, gun, legL, legR, blockArc, color, baseRadius: 1 };
+    return { root, body, gun, arm, legL, legR, blockArc, color, baseRadius: 1 };
   }
 
-  _buildLeg(color) {
-    const g    = new THREE.Group();
-    const mat  = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
-    const pts  = [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.1, 0.5, 0), new THREE.Vector3(0, 1.0, 0)];
-    const geo  = new THREE.BufferGeometry().setFromPoints(pts);
-    g.add(new THREE.Line(geo, mat));
+  _buildLeg() {
+    const g   = new THREE.Group();
+    const legH = 0.9;
+    const legW = 0.13;
+    const geo  = new THREE.PlaneGeometry(legW, legH);
+    const mat  = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(0, legH / 2, 0);  // pivot at top (hip)
+    g.add(mesh);
     return g;
   }
 
@@ -233,15 +243,18 @@ export class Renderer {
     const facingRight = Math.cos(aimAngle) >= 0;
     pm.root.scale.x = facingRight ? r : -r;
 
-    // Gun points in aim direction
+    // Gun fixed to left hand (viewer's right); only rotates with aim
     const localAngle = facingRight ? aimAngle : Math.PI - aimAngle;
-    pm.gun.position.set(Math.cos(localAngle) * 1.1, -Math.sin(localAngle) * 1.1, 0.1);
+    pm.gun.position.set(1.1, 0, 0.1);
     pm.gun.rotation.z = localAngle;
+    pm.arm.position.set(Math.cos(localAngle) * 0.5, -Math.sin(localAngle) * 0.5, 0.09);
+    pm.arm.rotation.z = localAngle;
 
-    // Simple leg walk animation
+    // Leg walk animation -- only when grounded and moving
+    const walking = playerState.onGround && playerState.vx !== 0;
     const walkPhase = (t * 8) % (Math.PI * 2);
-    pm.legL.rotation.z = playerState.vx !== 0 ? Math.sin(walkPhase) * 0.4 : 0;
-    pm.legR.rotation.z = playerState.vx !== 0 ? Math.sin(walkPhase + Math.PI) * 0.4 : 0;
+    pm.legL.rotation.z = walking ? Math.sin(walkPhase) * 0.4 : 0;
+    pm.legR.rotation.z = walking ? Math.sin(walkPhase + Math.PI) * 0.4 : 0;
 
     // Compress legs on landing (squat)
     const squat = playerState.onGround ? 1 : 0.9;
