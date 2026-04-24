@@ -204,6 +204,7 @@ export class Game {
     if (this.state === 'start_pick') {
       const localIdx = this.isHost ? 0 : 1;
       if (this.isOnline && localIdx !== this.pickerIdx) return;
+      if (this.isAI && this.pickerIdx !== 0) return;  // AI picks for P2; block human click
       const picked = this.ui.getCardPickerClick(this.cardOffer, mx, my);
       if (picked >= 0) this._pickCard(picked);
     }
@@ -211,6 +212,7 @@ export class Game {
     if (this.state === 'card_pick') {
       const localIdx = this.isHost ? 0 : 1;
       if (this.isOnline && localIdx !== this.pickerIdx) return;
+      if (this.isAI && this.pickerIdx !== 0) return;  // AI picks for P2; block human click
       const picked = this.ui.getCardPickerClick(this.cardOffer, mx, my);
       if (picked >= 0) this._pickCardRound(picked);
     }
