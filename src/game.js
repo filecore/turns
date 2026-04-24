@@ -819,15 +819,32 @@ export class Game {
     }
     if (isLocal && idx === 1) {
       if (this.isAI && opponent && opponent.hp > 0) {
-        // AI: maintain ~280px distance, chase height, shoot when aimed, block randomly
+        // Dodge bullets heading toward AI
+        for (const b of this.bullets) {
+          if (b.owner === 1) continue;
+          const bDx = b.x - p.x;
+          const bDy = b.y - p.y;
+          const bDist = Math.hypot(bDx, bDy);
+          if (bDist < 220) {
+            const bSpd = Math.hypot(b.vx, b.vy) || 1;
+            const approach = (-b.vx * bDx - b.vy * bDy) / (bSpd * bDist);
+            if (approach > 0.75) {
+              if (Math.random() < 0.35) doJump(p);
+              if (Math.random() < 0.25) p.vx += (Math.random() > 0.5 ? 1 : -1) * moveMult * 0.6;
+              break;
+            }
+          }
+        }
+        // Maintain ~280px distance and chase height
         const dx  = opponent.x - p.x;
         const tgt = 280;
         if      (Math.abs(dx) > tgt + 60) p.vx += Math.sign(dx) * moveMult * dt * 12;
         else if (Math.abs(dx) < tgt - 60) p.vx -= Math.sign(dx) * moveMult * dt * 12;
         if ((p.onGround || p.coyoteTimer > 0) && Math.random() < dt * (opponent.y < p.y - 100 ? 3.5 : 0.5)) doJump(p);
+        // Shoot when aimed (reduced rate vs max cooldown to keep beatable)
         const dist = Math.hypot(opponent.x - p.x, opponent.y - p.y) || 1;
         const dot  = (dx * Math.cos(p.aimAngle) - (opponent.y - p.y) * Math.sin(p.aimAngle)) / dist;
-        if (dot > 0.92 && Math.random() < dt * 8) this._tryShoot(p, 1);
+        if (dot > 0.92 && Math.random() < dt * 5) this._tryShoot(p, 1);
         if (Math.random() < dt * 0.4) this._startBlock(p);
       } else if (!this.isAI) {
         if (this._keys['Numpad0'] || this._keys['Slash']) this._tryShoot(p, 1);
