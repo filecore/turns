@@ -287,12 +287,6 @@ export class Renderer {
     const body     = new THREE.Mesh(bodyGeo, bodyMat);
     root.add(body);
 
-    // Black outline ring (slightly larger)
-    const outlineGeo = new THREE.RingGeometry(1, 1.12, 24);
-    const outlineMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-    const outline    = new THREE.Mesh(outlineGeo, outlineMat);
-    root.add(outline);
-
     // Eyes (two dots)
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
     const eyeGeo = new THREE.CircleGeometry(0.1, 8);

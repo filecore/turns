@@ -159,9 +159,12 @@ export class Game {
       this._canvasMouseX = e.clientX - r.left;
       this._canvasMouseY = e.clientY - r.top;
       if (this.state === 'card_pick' || this.state === 'start_pick') {
-        const prev = this.cardHovered;
-        this.cardHovered = this.ui.getCardPickerHover(this.cardOffer, this._canvasMouseX, this._canvasMouseY);
-        if (this.cardHovered >= 0 && this.cardHovered !== prev) playUiTick();
+        const aiTurn = this.isAI && this.pickerIdx === 1;
+        if (!aiTurn) {
+          const prev = this.cardHovered;
+          this.cardHovered = this.ui.getCardPickerHover(this.cardOffer, this._canvasMouseX, this._canvasMouseY);
+          if (this.cardHovered >= 0 && this.cardHovered !== prev) playUiTick();
+        }
       }
       if (this.state === 'lobby') {
         const hover = this.ui.getLobbyClick(this._canvasMouseX, this._canvasMouseY, this.lobbyState.mode);
@@ -597,14 +600,38 @@ export class Game {
   }
 
   _scheduleAIPick(phase) {
+    const offer = this.cardOffer || [];
+    if (!offer.length) return;
+    const chosenIdx = this._aiChooseCard(offer, this.players[1]);
+
+    // Wander over 2-3 random cards so the human can follow along
+    const wanderSteps = 2 + Math.floor(Math.random() * 2);
+    let delay = 900 + Math.random() * 400;
+
+    for (let i = 0; i < wanderSteps; i++) {
+      const randIdx = Math.floor(Math.random() * offer.length);
+      const d = delay;
+      setTimeout(() => {
+        if (this.state !== phase || this.pickerIdx !== 1) return;
+        this.cardHovered = randIdx;
+      }, d);
+      delay += 500 + Math.random() * 350;
+    }
+
+    // Settle on the chosen card
     setTimeout(() => {
       if (this.state !== phase || this.pickerIdx !== 1) return;
-      const offer = this.cardOffer || [];
-      if (!offer.length) return;
-      const idx = this._aiChooseCard(offer, this.players[1]);
-      if (phase === 'start_pick') this._pickCard(idx);
-      else                        this._pickCardRound(idx);
-    }, 800 + Math.random() * 400);
+      this.cardHovered = chosenIdx;
+    }, delay);
+    delay += 700 + Math.random() * 400;
+
+    // Confirm pick
+    setTimeout(() => {
+      if (this.state !== phase || this.pickerIdx !== 1) return;
+      this.cardHovered = -1;
+      if (phase === 'start_pick') this._pickCard(chosenIdx);
+      else                        this._pickCardRound(chosenIdx);
+    }, delay);
   }
 
   _aiChooseCard(offer, aiPlayer) {
@@ -689,7 +716,7 @@ export class Game {
       midtext += `  |  +${this._lastPickedCard.name}`;
       this._lastPickedCard = null;
     }
-    this._showOverlay('FIGHT', hint, 1.2, () => {}, '#ffffff', midtext);
+    this._showOverlay('FIGHT', hint, 2.0, () => {}, '#ffffff', midtext);
     startAmbient();
   }
 
@@ -711,7 +738,7 @@ export class Game {
     const gHint     = gIsFirst ? 'WASD / Arrows + mouse   LClick shoot   RClick block' : '';
     let gMidtext  = `${this.map?.name || ''} • Fight ${gFightNum}`;
     if (msg.lastCard) gMidtext += `  |  +${msg.lastCard}`;
-    this._showOverlay('FIGHT', gHint, 1.2, () => {}, '#ffffff', gMidtext);
+    this._showOverlay('FIGHT', gHint, 2.0, () => {}, '#ffffff', gMidtext);
   }
 
   // ── Round / match logic ───────────────────────────────────────────────────────
@@ -743,7 +770,7 @@ export class Game {
       this.net.send({ type: 'fight_result', winnerIdx: survivorIdx });
     }
 
-    this._showOverlay(`Player ${survivorIdx + 1} wins`, scoreSubtext, 1.6, () => {
+    this._showOverlay(`Player ${survivorIdx + 1} wins`, scoreSubtext, 3.0, () => {
       if (survivor.score >= 5) {
         this._endMatch(survivorIdx);
       } else if (survivor.fightWins >= 2) {
