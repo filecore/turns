@@ -223,13 +223,12 @@ export class UI {
   _drawAmmoFor(player, idx) {
     if (player.hp <= 0) return;
     const ctx = this.ctx;
-    // Draw near the gun: gun is fixed to viewer's right side of the player
-    const facingRight = Math.cos(player.aimAngle || 0) >= 0;
-    const side  = facingRight ? 1 : -1;
-    const gx    = player.x + side * player.radius * 1.2;
-    const gy    = player.y - player.radius * 0.4;
-    const sx    = this._px(gx);
-    const sy    = this._px(gy);
+    // Position at the gun-arm endpoint (ARM_LEN body radii in aim direction)
+    const ARM_LEN = 1.7;
+    const gx = player.x + Math.cos(player.aimAngle || 0) * player.radius * ARM_LEN;
+    const gy = player.y - Math.sin(player.aimAngle || 0) * player.radius * ARM_LEN;
+    const sx = this._px(gx);
+    const sy = this._px(gy) - this._px(player.radius * 0.6);
     const total   = player.maxAmmo;
     const current = player.ammo;
 
@@ -240,27 +239,37 @@ export class UI {
       ctx.textAlign = 'center';
       ctx.fillText(`${current}/${total}`, sx, sy + this._px(5));
     } else {
+      const ROW_SIZE = 3;
       const dotW  = this._px(6);
       const dotH  = this._px(4);
       const gap   = this._px(3);
-      const startX  = sx - (total * (dotW + gap) - gap) / 2;
-      for (let i = 0; i < total; i++) {
-        ctx.fillStyle = i < current ? '#ffee00' : '#444444';
-        ctx.fillRect(startX + i * (dotW + gap), sy, dotW, dotH);
+      const rows  = Math.ceil(total / ROW_SIZE);
+      for (let row = 0; row < rows; row++) {
+        const start  = row * ROW_SIZE;
+        const count  = Math.min(ROW_SIZE, total - start);
+        const rowY   = sy - row * (dotH + gap);
+        const rowX   = sx - (count * (dotW + gap) - gap) / 2;
+        for (let i = 0; i < count; i++) {
+          ctx.fillStyle = (start + i) < current ? '#ffee00' : '#444444';
+          ctx.fillRect(rowX + i * (dotW + gap), rowY, dotW, dotH);
+        }
       }
     }
 
     if (player.reloading) {
+      const dotH = this._px(4), gap = this._px(3);
+      const rows  = total > 9 ? 1 : Math.ceil(total / 3);
+      const topRowY = sy - (rows - 1) * (dotH + gap);
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.font      = this._font(10, 'normal');
       ctx.textAlign = 'center';
-      ctx.fillText('RELOAD', sx, sy - this._px(7));
+      ctx.fillText('RELOAD', sx, topRowY - this._px(5));
       const reloadFrac = player.reloadTime > 0 ? 1 - Math.max(0, player.reloadTimer) / player.reloadTime : 1;
-      const reloadW = this._px(Math.min(total, 9) * 9 + 10);
+      const reloadW = this._px(Math.min(total, 3) * 9 + 4);
       const reloadX = sx - reloadW / 2;
       ctx.fillStyle = '#222222';
       ctx.fillRect(reloadX, sy + this._px(6), reloadW, this._px(2));
-      ctx.fillStyle = P_COLORS[idx];
+      ctx.fillStyle = '#ffee00';
       ctx.fillRect(reloadX, sy + this._px(6), reloadFrac * reloadW, this._px(2));
     }
   }

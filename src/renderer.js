@@ -515,16 +515,18 @@ export class Renderer {
 
     const ARM_LEN = 1.7;
     const GUN_SAG = 0.45;  // perpendicular offset above arm line; must exceed disc radius(0.21)+gun half-height(0.15)
+    // sagSign compensates for root x-flip: facing right uses -1 offset (screen-up), facing left needs +1 to stay screen-up
+    const sagSign = facingRight ? -1 : 1;
 
     if (pm.gunKickTimer > 0) {
       pm.gunKickTimer -= dt;
       const kickFrac = Math.max(0, pm.gunKickTimer / 0.09);
       const dist = ARM_LEN - kickFrac * 0.42;
-      pm.gun.position.set(Math.cos(localAngle) * dist - Math.sin(localAngle) * GUN_SAG,
-                          -Math.sin(localAngle) * dist - Math.cos(localAngle) * GUN_SAG, 0.1);
+      pm.gun.position.set(Math.cos(localAngle) * dist + sagSign * (-Math.sin(localAngle)) * GUN_SAG,
+                          -Math.sin(localAngle) * dist + sagSign * (-Math.cos(localAngle)) * GUN_SAG, 0.1);
     } else {
-      pm.gun.position.set(Math.cos(localAngle) * ARM_LEN - Math.sin(localAngle) * GUN_SAG,
-                          -Math.sin(localAngle) * ARM_LEN - Math.cos(localAngle) * GUN_SAG, 0.1);
+      pm.gun.position.set(Math.cos(localAngle) * ARM_LEN + sagSign * (-Math.sin(localAngle)) * GUN_SAG,
+                          -Math.sin(localAngle) * ARM_LEN + sagSign * (-Math.cos(localAngle)) * GUN_SAG, 0.1);
     }
     pm.gun.rotation.z = localAngle;
 
