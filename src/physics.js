@@ -91,8 +91,8 @@ export function applyVelocity(phys, dt) {
 export function clampToArena(phys, radius, arenaW, arenaH) {
   if (phys.x - radius < 0)       { phys.x = radius;          if (phys.vx < 0) phys.vx = 0; phys.onWall = -1; }
   if (phys.x + radius > arenaW)  { phys.x = arenaW - radius; if (phys.vx > 0) phys.vx = 0; phys.onWall =  1; }
-  // Falling off bottom respawns at top (safety net, should not normally happen)
-  if (phys.y - radius > arenaH)  { phys.y = 60; phys.vy = 0; }
+  if (phys.y - radius < 0)        { phys.y = radius;            if (phys.vy < 0) phys.vy = 0; }
+  if (phys.y + radius > arenaH)  { phys.y = arenaH - radius;  if (phys.vy > 0) phys.vy = 0; }
 }
 
 export function doJump(phys) {

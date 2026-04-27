@@ -3,7 +3,7 @@
 import { Renderer, ARENA_W, ARENA_H } from './renderer.js';
 import { UI } from './ui.js';
 import { Network } from './network.js';
-import { playShoot, playReload, playBlock, playHit, playDeath, playUiTick } from './audio.js';
+import { playShoot, playReload, playBlock, playHit, playDeath, playUiTick, playLowHp, playRicochet, playExplosion, playSniper, startAmbient, stopAmbient } from './audio.js';
 import { MAPS, randomMap } from './maps.js';
 import { CARDS, drawCardOffer } from './cards.js';
 import {
@@ -41,6 +41,10 @@ function defaultStats() {
     pristineBonus: false, pristineFired: false,
     radius: BULLET_RADIUS * 2.8,  // visual + physics radius
     speedMult: 1.0,
+    regen: 0, bulletExplosive: false, deadManHand: false, speedLoader: false, freshReload: false,
+    berserk: false, armor: 0, volatile: false,
+    bulletNoGravity: false, bulletPiercing: false, slippery: false,
+    maxExtraJumps: 0,
   };
 }
 
@@ -61,10 +65,10 @@ function createPlayer(spawnX, spawnY) {
 // ── Bullet object ─────────────────────────────────────────────────────────────
 
 let bulletIdCounter = 0;
-function createBullet(owner, x, y, vx, vy, radius, damage, bounces, homing) {
+function createBullet(owner, x, y, vx, vy, radius, damage, bounces, homing, explosive = false, noGravity = false, piercing = false) {
   // hasBouncedOff: owner immune until bullet ricochets off a platform or wall
   // lifetime: auto-expire after 5s to prevent accumulation from bouncing
-  return { id: bulletIdCounter++, owner, x, y, vx, vy, radius, damage, bounces, homing, prevX: x, prevY: y, hasBouncedOff: false, lifetime: 5.0 };
+  return { id: bulletIdCounter++, owner, x, y, vx, vy, radius, damage, bounces, homing, explosive, noGravity, piercing, prevX: x, prevY: y, hasBouncedOff: false, hitCooldowns: {}, lifetime: 5.0 };
 }
 
 // ── Main Game class ───────────────────────────────────────────────────────────
@@ -95,6 +99,7 @@ export class Game {
     this.overlaySubtext = '';
     this.overlayColor   = '#ffffff';
     this._dmgNumbers    = [];   // { x, y, amount, timer, color }
+    this.paused         = false;
 
     this.lobbyState  = { mode: 'menu', roomCode: '', inputCode: '', error: '' };
 
@@ -106,12 +111,31 @@ export class Game {
     this._frameId     = null;
     this._fightOver    = false;  // guard against double-death in same tick
     this._pendingBlock = false;  // guest right-click block flag
+    this._pendingShoot = false;  // guest left-click shoot flag
+    this._prevLobbyHover = null;
     this.matchWinner   = 0;
     this.isAI          = false;
+    this.aiDifficulty  = 'normal';
     this._aiAimOffset  = 0;
     this._aiAimTimer   = 0;
+    // AI parameter fields (set by _applyAIDifficulty)
+    this._aiAimRange      = 0.14;
+    this._aiAimMinT       = 0.08;
+    this._aiAimMaxT       = 0.12;
+    this._aiShootThresh   = 0.92;
+    this._aiShootRate     = 5;
+    this._aiTargetDist    = 280;
+    this._aiBlockRate     = 0.3;
+    this._aiSmartCards    = true;
+    this._lobbyMapTimer   = 4.0;
 
     this._bindInput();
+
+    // Build a lobby arena preview so the background is lit on first load
+    const lobbyMap = randomMap();
+    this._lobbyMapName = lobbyMap.name;
+    this.renderer.setMapTint(lobbyMap.bgTint || 0x111122);
+    this.renderer.buildPlatformMeshes(lobbyMap.platforms, lobbyMap.platformColor);
   }
 
   // ── Input binding ────────────────────────────────────────────────────────────
@@ -131,9 +155,18 @@ export class Game {
       const pos = this.renderer.screenToArena(e.clientX, e.clientY);
       this._mouseX = pos.x;
       this._mouseY = pos.y;
+      const r = this.ui.canvas.getBoundingClientRect();
+      this._canvasMouseX = e.clientX - r.left;
+      this._canvasMouseY = e.clientY - r.top;
       if (this.state === 'card_pick' || this.state === 'start_pick') {
-        const r = this.ui.canvas.getBoundingClientRect();
-        this.cardHovered = this.ui.getCardPickerHover(this.cardOffer, e.clientX - r.left, e.clientY - r.top);
+        const prev = this.cardHovered;
+        this.cardHovered = this.ui.getCardPickerHover(this.cardOffer, this._canvasMouseX, this._canvasMouseY);
+        if (this.cardHovered >= 0 && this.cardHovered !== prev) playUiTick();
+      }
+      if (this.state === 'lobby') {
+        const hover = this.ui.getLobbyClick(this._canvasMouseX, this._canvasMouseY, this.lobbyState.mode);
+        if (hover && hover !== this._prevLobbyHover) playUiTick();
+        this._prevLobbyHover = hover;
       }
     });
     window.addEventListener('mousedown', e => {
@@ -155,17 +188,47 @@ export class Game {
       }
     }
 
+    if (e.code === 'Escape' && this.state === 'fight' && !this.isOnline) {
+      this.paused = !this.paused;
+    }
+
+    // Card picker keyboard navigation
+    if (this.state === 'start_pick' || this.state === 'card_pick') {
+      const n = this.cardOffer?.length || 0;
+      if (!n) return;
+      const localIdx = this.isHost ? 0 : 1;
+      const canPick = !this.isOnline || localIdx === this.pickerIdx;
+      const canPickAI = !this.isAI || this.pickerIdx === 0;
+      if (!canPick || !canPickAI) return;
+
+      if (this.cardHovered < 0) this.cardHovered = 0;
+      if (e.code === 'ArrowLeft')  { this.cardHovered = this.cardHovered <= 0 ? n - 1 : this.cardHovered - 1; }
+      if (e.code === 'ArrowRight') { this.cardHovered = this.cardHovered >= n - 1 ? 0 : this.cardHovered + 1; }
+      if (e.code === 'Enter' || e.code === 'Space') {
+        const idx = this.cardHovered >= 0 ? this.cardHovered : 0;
+        if (this.state === 'start_pick') this._pickCard(idx);
+        else                             this._pickCardRound(idx);
+      }
+    }
+
     if (this.state === 'fight') {
       const p = this.isHost ? this.players[0] : this.players[1];
       if (!p || p.hp <= 0) return;
       if (e.code === 'KeyW') {
         const target = this.isHost || this.isLocal ? this.players[0] : this.players[1];
-        if (target && target.hp > 0) { doJump(target); this._sendInput(); }
+        if (target && target.hp > 0) {
+          const wasAir = !target.onGround && target.coyoteTimer <= 0;
+          if (doJump(target) && wasAir) this._spawnJumpPuff(target, 0);
+          this._sendInput();
+        }
       }
       if (e.code === 'ArrowUp') {
         if (this.isLocal) {
           const p2 = this.players[1];
-          if (p2 && p2.hp > 0) doJump(p2);
+          if (p2 && p2.hp > 0) {
+            const wasAir = !p2.onGround && p2.coyoteTimer <= 0;
+            if (doJump(p2) && wasAir) this._spawnJumpPuff(p2, 1);
+          }
         } else if (!this.isHost) {
           if (p && p.hp > 0) { doJump(p); this._sendInput(); }
         }
@@ -179,7 +242,15 @@ export class Game {
     const p = this.players[localIdx];
     if (!p || p.hp <= 0) return;
 
-    if (e.button === 0) this._tryShoot(p, localIdx);
+    if (e.button === 0) {
+      if (this.isOnline && !this.isHost) {
+        // Guest: signal shoot via next continuous input send
+        this._pendingShoot = true;
+        this._sendContinuousInput();
+        this._pendingShoot = false;
+      }
+      this._tryShoot(p, localIdx);
+    }
     if (e.button === 2) {
       if (this.isOnline && !this.isHost) {
         // Guest: signal block via next continuous input send
@@ -195,11 +266,17 @@ export class Game {
   _onOverlayClick(mx, my) {
     if (this.state === 'lobby') {
       if (this.lobbyState.mode === 'menu') {
-        const action = this.ui.getLobbyClick(mx, my);
+        const action = this.ui.getLobbyClick(mx, my, 'menu');
         if (action === 'host')  this._doHost();
         if (action === 'join')  { this.lobbyState.mode = 'joining'; this.lobbyState.error = ''; }
         if (action === 'local') this._startLocal();
-        if (action === 'ai')    this._startAI();
+        if (action === 'ai')    this.lobbyState.mode = 'ai_difficulty';
+      } else if (this.lobbyState.mode === 'ai_difficulty') {
+        const action = this.ui.getLobbyClick(mx, my, 'ai_difficulty');
+        if (action === 'back')   this.lobbyState.mode = 'menu';
+        if (action === 'easy')   { this.aiDifficulty = 'easy';   this._startAI(); }
+        if (action === 'normal') { this.aiDifficulty = 'normal'; this._startAI(); }
+        if (action === 'hard')   { this.aiDifficulty = 'hard';   this._startAI(); }
       }
     }
 
@@ -220,7 +297,9 @@ export class Game {
     }
 
     if (this.state === 'match_end') {
-      this._goToLobby();
+      const action = this.ui.getMatchEndClick(mx, my);
+      if (action === 'rematch') this._doRematch();
+      else                      this._goToLobby();
     }
   }
 
@@ -326,11 +405,11 @@ export class Game {
     this.net.send({
       type: 'input',
       keys: {
-        left:  !!this._keys['ArrowLeft'],
-        right: !!this._keys['ArrowRight'],
-        jump:  !!this._keys['ArrowUp'],
-        shoot: !!this._keys['Numpad0'],
-        block: !!(this._keys['NumpadEnter'] || this._pendingBlock),
+        left:  !!(this._keys['ArrowLeft']  || this._keys['KeyA']),
+        right: !!(this._keys['ArrowRight'] || this._keys['KeyD']),
+        jump:  !!(this._keys['ArrowUp']    || this._keys['KeyW']),
+        shoot: !!(this._keys['Numpad0']    || this._pendingShoot),
+        block: !!(this._keys['NumpadEnter'] || this._keys['ShiftLeft'] || this._keys['ShiftRight'] || this._pendingBlock),
       },
       mouseAngle,
     });
@@ -342,7 +421,7 @@ export class Game {
       type: 'state',
       p1: this._snapPlayer(this.players[0]),
       p2: this._snapPlayer(this.players[1]),
-      bullets: this.bullets.map(b => ({ id: b.id, x: b.x, y: b.y, prevX: b.prevX, prevY: b.prevY, owner: b.owner, radius: b.radius })),
+      bullets: this.bullets.map(b => ({ id: b.id, x: b.x, y: b.y, prevX: b.prevX, prevY: b.prevY, owner: b.owner, radius: b.radius, explosive: b.explosive || false, homing: b.homing || false })),
     };
     this.net.send(snap);
   }
@@ -358,6 +437,12 @@ export class Game {
       radius: p.radius, aimAngle: p.aimAngle, onGround: p.onGround,
       score: p.score, fightWins: p.fightWins, landTimer: p.landTimer || 0,
       cards: (p.cards || []).map(c => c.id),
+      // Visual effect properties for guest rendering
+      armor: p.armor || 0, berserk: p.berserk || false,
+      tasteTimer: p.tasteTimer || 0, regen: p.regen || 0,
+      leech: p.leech || 0, damageDecay: p.damageDecay || false,
+      deadManHand: p.deadManHand || false, volatile: p.volatile || false,
+      _decayQueue: p._decayQueue || null,
     };
   }
 
@@ -377,7 +462,7 @@ export class Game {
       const delta = prevHp - player.hp;
       if (delta > 0 && prevHp > 0) {
         const col = pi === 0 ? '#e63946' : '#457b9d';
-        this._dmgNumbers.push({ x: player.x, y: player.y - player.radius, amount: Math.round(delta), timer: 0.9, color: col });
+        this._dmgNumbers.push({ x: player.x, y: player.y - player.radius, amount: Math.round(delta), timer: 0.9, maxTimer: 0.9, color: col });
         this.renderer.spawnHitBurst(player.x, player.y, pi === 0 ? 0xe63946 : 0x457b9d);
         this.renderer.flashPlayer(pi);
         this.renderer.triggerShake(5, 0.18);
@@ -402,7 +487,39 @@ export class Game {
     this.isOnline = false;
     this.isHost   = true;
     this.isAI     = true;
+    this._applyAIDifficulty();
     this._startStartPick();
+  }
+
+  _applyAIDifficulty() {
+    if (this.aiDifficulty === 'easy') {
+      this._aiAimRange    = 0.55;
+      this._aiAimMinT     = 0.25;
+      this._aiAimMaxT     = 0.20;
+      this._aiShootThresh = 0.70;
+      this._aiShootRate   = 2.5;
+      this._aiTargetDist  = 420;
+      this._aiBlockRate   = 0.10;
+      this._aiSmartCards  = false;
+    } else if (this.aiDifficulty === 'hard') {
+      this._aiAimRange    = 0.05;
+      this._aiAimMinT     = 0.03;
+      this._aiAimMaxT     = 0.04;
+      this._aiShootThresh = 0.96;
+      this._aiShootRate   = 9;
+      this._aiTargetDist  = 240;
+      this._aiBlockRate   = 0.55;
+      this._aiSmartCards  = true;
+    } else {
+      this._aiAimRange    = 0.14;
+      this._aiAimMinT     = 0.08;
+      this._aiAimMaxT     = 0.12;
+      this._aiShootThresh = 0.92;
+      this._aiShootRate   = 5;
+      this._aiTargetDist  = 280;
+      this._aiBlockRate   = 0.30;
+      this._aiSmartCards  = true;
+    }
   }
 
   _startStartPick() {
@@ -412,6 +529,9 @@ export class Game {
     const spawn = this.map;
     this.players[0] = createPlayer(spawn.spawnP1.x, spawn.spawnP1.y);
     this.players[1] = createPlayer(spawn.spawnP2.x, spawn.spawnP2.y);
+    this.renderer.setMapTint(this.map.bgTint || 0x111122);
+    this.renderer.buildPlatformMeshes(this.map.platforms, this.map.platformColor);
+    this.renderer.buildPlayerMeshes();
 
     this.cardOffer = drawCardOffer(5);
     this.pickerIdx = 0;
@@ -433,6 +553,9 @@ export class Game {
       this.map = spawn;
       this.players[0] = createPlayer(spawn.spawnP1.x, spawn.spawnP1.y);
       this.players[1] = createPlayer(spawn.spawnP2.x, spawn.spawnP2.y);
+      this.renderer.setMapTint(this.map.bgTint || 0x111122);
+      this.renderer.buildPlatformMeshes(this.map.platforms, this.map.platformColor);
+      this.renderer.buildPlayerMeshes();
     }
   }
 
@@ -476,10 +599,57 @@ export class Game {
   _scheduleAIPick(phase) {
     setTimeout(() => {
       if (this.state !== phase || this.pickerIdx !== 1) return;
-      const idx = Math.floor(Math.random() * (this.cardOffer?.length || 1));
+      const offer = this.cardOffer || [];
+      if (!offer.length) return;
+      const idx = this._aiChooseCard(offer, this.players[1]);
       if (phase === 'start_pick') this._pickCard(idx);
       else                        this._pickCardRound(idx);
-    }, 900);
+    }, 800 + Math.random() * 400);
+  }
+
+  _aiChooseCard(offer, aiPlayer) {
+    if (!this._aiSmartCards) return Math.floor(Math.random() * offer.length);
+
+    const owned   = new Set((aiPlayer?.cards || []).map(c => c.id));
+    const ownedArr = (aiPlayer?.cards || []).map(c => c.id);
+
+    // Card utility scores
+    const PREF = {
+      haste: 3, quick_hands: 3, chaser: 3, leech: 3, regeneration: 3,
+      tank: 2, glass_cannon: 2, bouncy: 2, taste_of_blood: 2, explosive_rounds: 2,
+      dead_mans_hand: 3, speed_loader: 2, bigger_magazine: 1,
+      extra_ammo: 1, quick_reload: 1, big_bullet: 1, burst: 1, huge: 1,
+      shields_up: 1, decay: 1, defender: 1, pristine_perseverance: 2,
+      berserk: 3, armor: 2, volatile: 2,
+      sniper: 2, drill: 3, slippery: 1, extra_jump: 2,
+    };
+
+    let bestIdx = 0, bestScore = -Infinity;
+    offer.forEach((card, i) => {
+      let score = PREF[card.id] || 1;
+
+      // Penalise duplicates except stackable cards
+      const stackable = new Set(['extra_ammo', 'bouncy', 'quick_reload', 'haste', 'regeneration', 'bigger_magazine', 'armor', 'extra_jump']);
+      if (owned.has(card.id) && !stackable.has(card.id)) score -= 4;
+
+      // Synergies
+      if (card.id === 'chaser'    && ownedArr.includes('bouncy'))    score += 1;
+      if (card.id === 'leech'     && ownedArr.includes('glass_cannon')) score += 2;
+      if (card.id === 'tank'      && ownedArr.includes('shields_up')) score += 1;
+      if (card.id === 'quick_hands' && ownedArr.includes('burst'))     score += 1;
+      if (card.id === 'dead_mans_hand' && ownedArr.includes('glass_cannon')) score += 3;
+      if (card.id === 'speed_loader' && ownedArr.includes('quick_reload'))   score += 2;
+      if (card.id === 'berserk'   && ownedArr.includes('dead_mans_hand')) score += 2;
+      if (card.id === 'volatile'  && ownedArr.includes('defender'))   score += 2;
+      if (card.id === 'drill'     && ownedArr.includes('bouncy'))    score += 2;
+      if (card.id === 'sniper'    && ownedArr.includes('quick_hands')) score += 1;
+
+      // Small random tiebreak so AI doesn't always pick identically
+      score += Math.random() * 0.5;
+
+      if (score > bestScore) { bestScore = score; bestIdx = i; }
+    });
+    return bestIdx;
   }
 
   _startFight() {
@@ -488,7 +658,8 @@ export class Game {
     this._dmgNumbers = [];
     this._fightOver = false;
     this.map = randomMap();
-    this.renderer.buildPlatformMeshes(this.map.platforms);
+    this.renderer.setMapTint(this.map.bgTint || 0x111122);
+    this.renderer.buildPlatformMeshes(this.map.platforms, this.map.platformColor);
     this.renderer.buildPlayerMeshes();
 
     // Reset positions and hp
@@ -498,18 +669,28 @@ export class Game {
       p.x = spawn.x; p.y = spawn.y; p.vx = 0; p.vy = 0;
       p.hp = p.maxHp; p.ammo = p.maxAmmo; p.reloading = false; p.reloadTimer = 0;
       p.blocking = false; p.blockTimer = 0; p.blockDurationTimer = 0; p.shootTimer = 0;
-      p.tasteTimer = 0; p.pristineFired = false; p._decayQueue = null; p.landTimer = 0; p.coyoteTimer = 0;
+      p.tasteTimer = 0; p.pristineFired = false; p._decayQueue = null; p.landTimer = 0; p.coyoteTimer = 0; p.freshReload = false;
     }
 
     if (this.isOnline && this.isHost) {
-      this.net.send({ type: 'fight_start', mapIdx: MAPS.indexOf(this.map) });
+      this.net.send({ type: 'fight_start', mapIdx: MAPS.indexOf(this.map), lastCard: this._lastPickedCard?.name || null });
     }
 
     let hint = '';
-    if (this.isAI)          hint = 'WASD + mouse   LClick shoot   RClick block';
-    else if (this.isLocal)  hint = 'P1: WASD + LClick  |  P2: Arrows + / to shoot  .  to block';
-    else if (this.isOnline) hint = 'WASD + mouse   LClick shoot   RClick block';
-    this._showOverlay('FIGHT', hint, 1.2, () => {});
+    const fightNum = (this.players[0]?.fightWins || 0) + (this.players[1]?.fightWins || 0) + 1;
+    const isFirstFight = (this.players[0]?.score || 0) === 0 && (this.players[1]?.score || 0) === 0 && fightNum === 1;
+    if (isFirstFight) {
+      if (this.isAI)          hint = `WASD + mouse   LClick shoot   RClick block   AI: ${this.aiDifficulty.toUpperCase()}`;
+      else if (this.isLocal)  hint = 'P1: WASD + LClick  |  P2: Arrows + / to shoot  .  to block';
+      else if (this.isOnline) hint = 'WASD + mouse   LClick shoot   RClick block';
+    }
+    let midtext = `${this.map?.name || ''} • Fight ${fightNum}`;
+    if (this._lastPickedCard) {
+      midtext += `  |  +${this._lastPickedCard.name}`;
+      this._lastPickedCard = null;
+    }
+    this._showOverlay('FIGHT', hint, 1.2, () => {}, '#ffffff', midtext);
+    startAmbient();
   }
 
   _receiveFightStart(msg) {
@@ -521,9 +702,16 @@ export class Game {
     this.overlayText  = '';
     this.overlayTimer = 0;
     this._overlayCallback = null;
-    this.renderer.buildPlatformMeshes(this.map.platforms);
+    this.renderer.setMapTint(this.map.bgTint || 0x111122);
+    this.renderer.buildPlatformMeshes(this.map.platforms, this.map.platformColor);
     this.renderer.buildPlayerMeshes();
-    this._showOverlay('FIGHT', 'Arrows + mouse   LClick shoot   RClick block', 1.2, () => {});
+    startAmbient();
+    const gFightNum = (this.players[0]?.fightWins || 0) + (this.players[1]?.fightWins || 0) + 1;
+    const gIsFirst  = (this.players[0]?.score || 0) === 0 && (this.players[1]?.score || 0) === 0 && gFightNum === 1;
+    const gHint     = gIsFirst ? 'WASD / Arrows + mouse   LClick shoot   RClick block' : '';
+    let gMidtext  = `${this.map?.name || ''} • Fight ${gFightNum}`;
+    if (msg.lastCard) gMidtext += `  |  +${msg.lastCard}`;
+    this._showOverlay('FIGHT', gHint, 1.2, () => {}, '#ffffff', gMidtext);
   }
 
   // ── Round / match logic ───────────────────────────────────────────────────────
@@ -535,21 +723,27 @@ export class Game {
     const survivor = this.players[survivorIdx];
     survivor.fightWins = (survivor.fightWins || 0) + 1;
     survivor.score    += 0.5;
+    const scoreCol = survivorIdx === 0 ? '#e63946' : '#457b9d';
+    this._dmgNumbers.push({ x: this.players[survivorIdx].x, y: this.players[survivorIdx].y - this.players[survivorIdx].radius * 2.5, amount: 0, timer: 1.2, maxTimer: 1.2, color: scoreCol, label: '+0.5' });
 
+    stopAmbient();
     playDeath();
     const dead = this.players[deadIdx];
     if (dead) {
       const deathColor = deadIdx === 0 ? 0xe63946 : 0x457b9d;
-      this.renderer.spawnDeathBurst(dead.x, dead.y, deathColor);
+      this.renderer.spawnDeathBurst(dead.x, dead.y, deathColor, dead.lastHitAngle);
       this.renderer.triggerShake(10, 0.35);
     }
     const winColor = survivorIdx === 0 ? '#e63946' : '#457b9d';
+    const s0 = this.players[0]?.score || 0;
+    const s1 = this.players[1]?.score || 0;
+    const scoreSubtext = `${s0 % 1 === 0 ? s0 : s0.toFixed(1)}  -  ${s1 % 1 === 0 ? s1 : s1.toFixed(1)}`;
 
     if (this.isOnline && this.isHost) {
       this.net.send({ type: 'fight_result', winnerIdx: survivorIdx });
     }
 
-    this._showOverlay(`Player ${survivorIdx + 1} wins`, '', 1.6, () => {
+    this._showOverlay(`Player ${survivorIdx + 1} wins`, scoreSubtext, 1.6, () => {
       if (survivor.score >= 5) {
         this._endMatch(survivorIdx);
       } else if (survivor.fightWins >= 2) {
@@ -565,12 +759,15 @@ export class Game {
   _endMatch(winnerIdx) {
     this.state       = 'match_end';
     this.matchWinner = winnerIdx;
+    const victoryColor = winnerIdx === 0 ? 0xe63946 : 0x457b9d;
+    this.renderer.spawnVictoryBurst(victoryColor);
     if (this.isOnline && this.isHost) {
       this.net.send({ type: 'match_end', winnerIdx });
     }
   }
 
   _receiveFightResult(msg) {
+    stopAmbient();
     const winColor = msg.winnerIdx === 0 ? '#e63946' : '#457b9d';
     const deadIdx  = 1 - msg.winnerIdx;
     const dead     = this.players[deadIdx];
@@ -580,13 +777,30 @@ export class Game {
       this.renderer.spawnDeathBurst(dead.x, dead.y, deathColor);
       this.renderer.triggerShake(10, 0.35);
     }
-    this._showOverlay(`Player ${msg.winnerIdx + 1} wins`, '', 1.6, () => {
+    const s0 = this.players[0]?.score || 0;
+    const s1 = this.players[1]?.score || 0;
+    const scoreSubtext = `${s0 % 1 === 0 ? s0 : s0.toFixed(1)}  -  ${s1 % 1 === 0 ? s1 : s1.toFixed(1)}`;
+    this._showOverlay(`Player ${msg.winnerIdx + 1} wins`, scoreSubtext, 1.6, () => {
       this.overlayText = '';
     }, winColor);
   }
 
+  _doRematch() {
+    if (this.isOnline && !this.isHost) { this._goToLobby(); return; }
+    stopAmbient();
+    this.bullets    = [];
+    this._dmgNumbers = [];
+    this._fightOver  = false;
+    this.overlayText = '';
+    this.overlayTimer = 0;
+    this._overlayCallback = null;
+    this._startStartPick();
+  }
+
   _goToLobby() {
+    stopAmbient();
     this.state      = 'lobby';
+    this.paused     = false;
     this.isLocal      = false;
     this.isOnline     = false;
     this.isHost       = true;
@@ -595,6 +809,15 @@ export class Game {
     this._aiAimTimer  = 0;
     this.players      = [null, null];
     this.bullets    = [];
+    this.overlayText = '';
+    this.overlayTimer = 0;
+    this.renderer.hidePlayerMeshes();
+    this.renderer.syncBullets([]);
+    // Refresh lobby arena preview
+    const lobbyMap = randomMap();
+    this._lobbyMapName = lobbyMap.name;
+    this.renderer.setMapTint(lobbyMap.bgTint || 0x111122);
+    this.renderer.buildPlatformMeshes(lobbyMap.platforms, lobbyMap.platformColor);
     this.lobbyState = { mode: 'menu', roomCode: '', inputCode: '', error: '' };
     if (this.net) {
       this.net.onOpponentLeft = null;
@@ -637,23 +860,28 @@ export class Game {
       this.net.send({ type: 'card_pick_choice', cardId: card.id });
     }
     if (this.isOnline && !this.isHost) return; // guest waits for fight_start from host
+    this._lastPickedCard = card;
     this._startFight();
   }
 
   // ── Overlay helper ────────────────────────────────────────────────────────────
 
-  _showOverlay(text, subtext, duration, callback, color = '#ffffff') {
-    this.overlayText    = text;
-    this.overlaySubtext = subtext;
-    this.overlayColor   = color;
-    this.overlayTimer   = duration;
+  _showOverlay(text, subtext, duration, callback, color = '#ffffff', midtext = '') {
+    this.overlayText     = text;
+    this.overlaySubtext  = subtext;
+    this.overlayMidtext  = midtext;
+    this.overlayColor    = color;
+    this.overlayTimer    = duration;
+    this.overlayMaxTimer = duration;
     this._overlayCallback = callback;
   }
 
   // ── Shooting ─────────────────────────────────────────────────────────────────
 
   _tryShoot(p, playerIdx) {
-    if (p.ammo <= 0 || p.shootTimer > 0 || p.reloading) return;
+    if (p.ammo <= 0 || p.reloading) return;
+    if (p.shootTimer > 0 && !p.freshReload) return;
+    p.freshReload = false;
     p.ammo--;
     p.shootTimer = p.shootCooldown;
 
@@ -666,13 +894,30 @@ export class Game {
       const a = p.aimAngle + angleOffset;
       const bvx = Math.cos(a) * p.bulletSpeed;
       const bvy = -Math.sin(a) * p.bulletSpeed;
-      this.bullets.push(createBullet(playerIdx, p.x, p.y, bvx, bvy, p.bulletRadius, p.bulletDamage, p.bulletBounces, p.bulletHoming));
+      this.bullets.push(createBullet(playerIdx, p.x, p.y, bvx, bvy, p.bulletRadius, p.bulletDamage, p.bulletBounces, p.bulletHoming, p.bulletExplosive, p.bulletNoGravity || false, p.bulletPiercing || false));
     }
 
-    playShoot();
+    // Muzzle flash at gun tip
+    const tipX = p.x + Math.cos(p.aimAngle) * p.radius * 2.5;
+    const tipY = p.y - Math.sin(p.aimAngle) * p.radius * 2.5;
+    const dmhActive = p.deadManHand && p.maxHp > 0 && p.hp / p.maxHp < 0.5;
+    const flashCol = p.bulletExplosive ? 0xff8800 : (p.bulletHoming ? 0x22ddff : (p.bulletNoGravity ? 0xffffcc : (p.bulletPiercing ? 0x88ff88 : (dmhActive ? 0xff2244 : 0xffffaa))));
+    this.renderer.addParticle(tipX, tipY, Math.cos(p.aimAngle) * 60, -Math.sin(p.aimAngle) * 60, 0xffffff, 0.055, p.bulletRadius * 2.2);
+    this.renderer.addParticle(tipX, tipY, Math.cos(p.aimAngle) * 30, -Math.sin(p.aimAngle) * 30, flashCol, 0.09, p.bulletRadius * 1.4);
+
+    this.renderer.gunKick(playerIdx);
+    if (p.bulletNoGravity) playSniper(); else playShoot();
     if (p.ammo === 0) {
       if (p.autoBlockOnLastShot) this._startBlock(p);
       this._startReload(p);
+    }
+  }
+
+  _spawnJumpPuff(p, idx) {
+    const col = idx === 0 ? 0xe63946 : 0x457b9d;
+    for (let i = 0; i < 5; i++) {
+      const a = Math.PI / 2 + (Math.random() - 0.5) * 1.0;  // downward fan
+      this.renderer.addParticle(p.x + (Math.random() - 0.5) * p.radius, p.y, Math.cos(a) * 90, Math.sin(a) * 90, col, 0.25, 4);
     }
   }
 
@@ -694,6 +939,7 @@ export class Game {
 
   _tick(dt) {
     if (this.state !== 'fight') return;
+    if (this.paused) return;
 
     // Overlay timer (runs on host only in online mode)
     if (this.overlayTimer > 0) {
@@ -734,14 +980,50 @@ export class Game {
     // Decay damage over time
     if (p.damageDecay && p._decayQueue) {
       let ddt = 0;
-      for (const tick of p._decayQueue) { tick.timer -= dt; if (tick.timer <= 0) ddt += tick.amount; }
+      const firedShooterIdxs = [];
+      const firedAmounts = [];
+      for (const tick of p._decayQueue) {
+        tick.timer -= dt;
+        if (tick.timer <= 0) {
+          ddt += tick.amount;
+          firedShooterIdxs.push(tick.shooterIdx ?? -1);
+          firedAmounts.push(tick.amount);
+        }
+      }
       p._decayQueue = p._decayQueue.filter(t => t.timer > 0);
-      if (ddt > 0) this._applyDamage(p, idx, ddt, null);
+      if (ddt > 0) {
+        this._applyDamage(p, idx, ddt, null);
+        this._dmgNumbers.push({ x: p.x + (Math.random() - 0.5) * 20, y: p.y - p.radius, amount: Math.round(ddt), timer: 0.7, maxTimer: 0.7, color: '#dd8822' });
+        // Leech heals per fired tick
+        for (let ti = 0; ti < firedShooterIdxs.length; ti++) {
+          const s = this.players[firedShooterIdxs[ti]];
+          if (s && s.leech > 0 && s.hp > 0) {
+            const heal = firedAmounts[ti] * s.leech;
+            s.hp = Math.min(s.maxHp, s.hp + heal);
+            this._dmgNumbers.push({ x: s.x + (Math.random() - 0.5) * 20, y: s.y - s.radius, label: `+${Math.round(heal)}`, timer: 0.8, maxTimer: 0.8, color: '#44ff88' });
+          }
+        }
+      }
     }
 
     // Taste of blood
     if (p.tasteTimer > 0) { p.tasteTimer -= dt; }
-    const speedMult = ((p.tasteTimer > 0) ? 1.5 : 1.0) * (p.speedMult || 1.0);
+    // Berserk: speed scales with missing HP
+    const hpFracBerserk = (p.berserk && p.maxHp > 0) ? (1 - p.hp / p.maxHp) : 0;
+    const berserkMult   = 1 + hpFracBerserk * 0.8;
+    const speedMult = ((p.tasteTimer > 0) ? 1.5 : 1.0) * (p.speedMult || 1.0) * berserkMult;
+
+    // Regeneration
+    if (p.regen > 0 && p.hp < p.maxHp) {
+      p.hp = Math.min(p.maxHp, p.hp + p.regen * dt);
+      if (!p._regenTimer) p._regenTimer = 0;
+      p._regenTimer -= dt;
+      if (p._regenTimer <= 0) {
+        p._regenTimer = 0.45;
+        const regenTick = Math.round(p.regen * 0.45);
+        this._dmgNumbers.push({ x: p.x + (Math.random() - 0.5) * 35, y: p.y - p.radius * 1.6, label: `+${regenTick}`, timer: 0.7, maxTimer: 0.7, color: '#44ff88' });
+      }
+    }
 
     // Shoot timer
     if (p.shootTimer > 0) p.shootTimer -= dt;
@@ -749,7 +1031,7 @@ export class Game {
     // Reload
     if (p.reloading) {
       p.reloadTimer -= dt;
-      if (p.reloadTimer <= 0) { p.reloading = false; p.ammo = p.maxAmmo; }
+      if (p.reloadTimer <= 0) { p.reloading = false; p.ammo = p.maxAmmo; if (p.speedLoader) p.freshReload = true; }
     }
 
     // Block cooldown and active duration
@@ -764,6 +1046,8 @@ export class Game {
       p.hp += 400;
       if (p.hp > p.maxHp) p.maxHp = p.hp;
       p.pristineFired = true;
+      this.renderer.spawnDeathBurst(p.x, p.y, 0xffd700);
+      this._dmgNumbers.push({ x: p.x, y: p.y - p.radius * 2, label: '+400', timer: 1.4, maxTimer: 1.4, color: '#ffd700' });
     }
 
     const isLocal = this.isLocal;
@@ -777,13 +1061,23 @@ export class Game {
       const opp = this.players[0];
       if (opp) {
         if (this.isAI) {
-          // Refresh aim offset every 80-200ms for a natural wobble (not per-frame jitter)
+          // Refresh aim offset periodically for a natural wobble (not per-frame jitter)
           this._aiAimTimer -= dt;
           if (this._aiAimTimer <= 0) {
-            this._aiAimOffset = (Math.random() - 0.5) * 0.28;
-            this._aiAimTimer  = 0.08 + Math.random() * 0.12;
+            this._aiAimOffset = (Math.random() - 0.5) * this._aiAimRange * 2;
+            this._aiAimTimer  = this._aiAimMinT + Math.random() * this._aiAimMaxT;
           }
-          p.aimAngle = Math.atan2(-(opp.y - p.y), opp.x - p.x) + this._aiAimOffset;
+          if (p.bulletHoming) {
+            // Homing bullets self-steer; aim directly at opponent
+            p.aimAngle = Math.atan2(-(opp.y - p.y), opp.x - p.x) + this._aiAimOffset;
+          } else {
+            const dx0 = opp.x - p.x, dy0 = opp.y - p.y;
+            const dist0 = Math.sqrt(dx0 * dx0 + dy0 * dy0) || 1;
+            const travelTime = dist0 / p.bulletSpeed;
+            const leadX = opp.x + opp.vx * travelTime;
+            const leadY = opp.y + opp.vy * travelTime * 0.4;
+            p.aimAngle = Math.atan2(-(leadY - p.y), leadX - p.x) + this._aiAimOffset;
+          }
         } else {
           p.aimAngle = Math.atan2(-(opp.y - p.y), opp.x - p.x);
         }
@@ -835,17 +1129,35 @@ export class Game {
             }
           }
         }
-        // Maintain ~280px distance and chase height
+        // Dead Man's Hand: go aggressive at low HP (close distance, shoot more)
+        const hpFracAI = p.maxHp > 0 ? p.hp / p.maxHp : 1;
+        const dmhAggro = p.deadManHand && hpFracAI < 0.4;
+        // Opponent-card awareness: stay further back vs explosive/bouncy, block more vs glass cannon
+        const oppCards = (opponent.cards || []).map(c => c.id);
+        const oppHasBigThreat = oppCards.includes('explosive_rounds') || oppCards.includes('bouncy');
+        const oppHasGlassCannon = oppCards.includes('glass_cannon');
+        const oppHasSniper = oppCards.includes('sniper');
+        // Maintain distance; adjust based on cards and aggro
         const dx  = opponent.x - p.x;
-        const tgt = 280;
+        const baseTgt = this._aiTargetDist;
+        const tgt = dmhAggro ? 180 : (oppHasBigThreat ? Math.max(baseTgt, 360) : baseTgt);
         if      (Math.abs(dx) > tgt + 60) p.vx += Math.sign(dx) * moveMult * dt * 12;
         else if (Math.abs(dx) < tgt - 60) p.vx -= Math.sign(dx) * moveMult * dt * 12;
-        if ((p.onGround || p.coyoteTimer > 0) && Math.random() < dt * (opponent.y < p.y - 100 ? 3.5 : 0.5)) doJump(p);
-        // Shoot when aimed (reduced rate vs max cooldown to keep beatable)
+        // Jump toward opponent height; occasional random jumps to use platforms
+        const jumpTowardOpp = opponent.y < p.y - 100 ? 3.5 : 0.5;
+        const randomJump    = p.onGround ? 0.4 : 0;
+        if ((p.onGround || p.coyoteTimer > 0) && Math.random() < dt * (jumpTowardOpp + randomJump)) doJump(p);
+        if (p.onWall && Math.random() < dt * 8) doJump(p);
+        // Shoot when aimed; more aggressive when dmhAggro
         const dist = Math.hypot(opponent.x - p.x, opponent.y - p.y) || 1;
         const dot  = (dx * Math.cos(p.aimAngle) - (opponent.y - p.y) * Math.sin(p.aimAngle)) / dist;
-        if (dot > 0.92 && Math.random() < dt * 5) this._tryShoot(p, 1);
-        if (Math.random() < dt * 0.4) this._startBlock(p);
+        const shootThresh = dmhAggro ? Math.max(this._aiShootThresh - 0.04, 0.84) : this._aiShootThresh;
+        const shootRate   = dmhAggro ? this._aiShootRate * 1.4 : this._aiShootRate;
+        if (dot > shootThresh && Math.random() < dt * shootRate) this._tryShoot(p, 1);
+        // Block: more when opponent has glass cannon or sniper, less when AI is dmhAggro
+        const blockRate = (oppHasGlassCannon || oppHasSniper) ? Math.min(this._aiBlockRate * 2, 0.7) : this._aiBlockRate;
+        if (p.reloading && Math.random() < dt * 1.5) this._startBlock(p);
+        else if (!dmhAggro && Math.random() < dt * blockRate) this._startBlock(p);
       } else if (!this.isAI) {
         if (this._keys['Numpad0'] || this._keys['Slash']) this._tryShoot(p, 1);
         if (this._keys['NumpadEnter'] || this._keys['Period']) this._startBlock(p);
@@ -863,18 +1175,73 @@ export class Game {
     applyGravity(p, dt);
     applyVelocity(p, dt);
     resolvePlatforms(p, p.radius, this.map.platforms, dt);
+
+    // Detect arena-edge hits before clamping
+    const preWallVx = p.vx, preWallVy = p.vy;
+    const hitLeft   = p.x - p.radius < 0;
+    const hitRight  = p.x + p.radius > ARENA_W;
+    const hitTop    = p.y - p.radius < 0;
+    const hitBottom = p.y + p.radius > ARENA_H;
     clampToArena(p, p.radius, ARENA_W, ARENA_H);
 
-    // Landing squish timer
-    if (!wasOnGround && p.onGround) p.landTimer = 0.12;
+    // Arena-edge damage and bounce-back (all four edges)
+    if (hitLeft || hitRight || hitTop || hitBottom) {
+      const impactSpeed = (hitTop || hitBottom) ? Math.abs(preWallVy) : Math.abs(preWallVx);
+      if (impactSpeed > 80) {
+        if (p.blocking) {
+          // Super bounce -- throws player ~half arena distance
+          const superVx = (hitTop || hitBottom) ? (preWallVx * 0.5) : (hitLeft ? 1300 : -1300);
+          const superVy = hitTop ? 900 : (hitBottom ? -900 : Math.min(preWallVy * 0.4, -700));
+          p.vx = superVx;
+          p.vy = superVy;
+          this.renderer.triggerShake(10, 0.3);
+        } else {
+          // Damage proportional to impact speed, capped at 30
+          const wallDmg = Math.min(30, Math.round(impactSpeed * 0.08));
+          this._applyDamage(p, idx, wallDmg, null);
+          const wallDmgCol = idx === 0 ? '#e63946' : '#457b9d';
+          this._dmgNumbers.push({ x: p.x + (Math.random() - 0.5) * 20, y: p.y - p.radius, amount: wallDmg, timer: 0.9, maxTimer: 0.9, color: wallDmgCol });
+          // Bounce back from edge
+          if (hitLeft)   p.vx =  Math.abs(preWallVx) * 0.6;
+          if (hitRight)  p.vx = -Math.abs(preWallVx) * 0.6;
+          if (hitTop)    p.vy =  Math.abs(preWallVy) * 0.5;
+          if (hitBottom) p.vy = -Math.abs(preWallVy) * 0.5;
+          this.renderer.triggerShake(5, 0.15);
+        }
+      }
+    }
+
+    // Extra Jump card: grant bonus air jumps whenever grounded
+    if (p.onGround && p.maxExtraJumps > 0) p.jumpsLeft = 1 + p.maxExtraJumps;
+
+    // Landing squish + dust particles on hard impact
+    if (!wasOnGround && p.onGround) {
+      p.landTimer = 0.12;
+      if (Math.abs(p.vy) > 200) {
+        const dustCol = idx === 0 ? 0xe63946 : 0x457b9d;
+        for (let d = 0; d < 4; d++) {
+          const a = Math.PI + (Math.random() - 0.5) * 0.9;
+          this.renderer.addParticle(p.x + (Math.random() - 0.5) * p.radius, p.y + p.radius, Math.cos(a) * 80, -20, dustCol, 0.22, 4);
+        }
+      }
+    }
     if (p.landTimer > 0) p.landTimer -= dt;
 
     // Coyote time: open a brief jump window when walking off a ledge
     if (wasOnGround && !p.onGround && p.vy > 0) p.coyoteTimer = 0.12;
     if (p.coyoteTimer > 0) p.coyoteTimer -= dt;
 
-    // Friction
-    if (p.onGround) p.vx *= Math.pow(FRICTION, dt * 60);
+    // Friction (Slippery card reduces ground grip)
+    if (p.onGround) p.vx *= Math.pow(p.slippery ? 0.96 : FRICTION, dt * 60);
+
+    // Taste of Blood speed trail -- particles behind fast-moving player
+    if (p.tasteTimer > 0 && Math.abs(p.vx) > 180 && Math.random() < 0.35) {
+      const col = idx === 0 ? 0xff4455 : 0x4488ee;
+      this.renderer.addParticle(
+        p.x - Math.sign(p.vx) * p.radius * 0.8, p.y,
+        p.vx * 0.08, 0, col, 0.18, 5
+      );
+    }
   }
 
   _updateBullets(dt) {
@@ -895,40 +1262,55 @@ export class Game {
         }
       }
 
-      b.vy += GRAVITY * 0.25 * dt;  // bullets arc under partial gravity
+      if (!b.noGravity) b.vy += GRAVITY * 0.25 * dt;  // bullets arc under partial gravity
       b.x  += b.vx * dt;
       b.y  += b.vy * dt;
 
-      // Wall/ceiling bounces (Bouncy card)
-      if (b.bounces > 0) {
-        if (b.x - b.radius < 0 || b.x + b.radius > ARENA_W) { b.vx = -b.vx; b.x = Math.max(b.radius, Math.min(ARENA_W - b.radius, b.x)); b.bounces--; b.hasBouncedOff = true; }
-        if (b.y - b.radius < 0)                              { b.vy = -b.vy; b.y = b.radius; b.bounces--; b.hasBouncedOff = true; }
+      // Tick per-player hit cooldowns for piercing bullets
+      if (b.hitCooldowns) {
+        for (const k in b.hitCooldowns) {
+          b.hitCooldowns[k] -= dt;
+          if (b.hitCooldowns[k] <= 0) delete b.hitCooldowns[k];
+        }
       }
 
-      // Platform collision -- bullets always bounce off platforms
+      // Wall/ceiling bounces (Bouncy card)
+      if (b.bounces > 0) {
+        if (b.x - b.radius < 0 || b.x + b.radius > ARENA_W) { b.vx = -b.vx; b.x = Math.max(b.radius, Math.min(ARENA_W - b.radius, b.x)); b.bounces--; b.hasBouncedOff = true; playRicochet(); }
+        if (b.y - b.radius < 0)                              { b.vy = -b.vy; b.y = b.radius; b.bounces--; b.hasBouncedOff = true; playRicochet(); }
+      }
+
+      // Platform collision -- bounce only if bullet has bounces remaining (Bouncy card)
       let bouncedPlat = false;
       for (const plat of this.map.platforms) {
         if (b.x + b.radius > plat.x && b.x - b.radius < plat.x + plat.w &&
             b.y + b.radius > plat.y && b.y - b.radius < plat.y + plat.h) {
-          const fromTop    = b.prevY + b.radius <= plat.y;
-          const fromBottom = b.prevY - b.radius >= plat.y + plat.h;
-          const fromLeft   = b.prevX + b.radius <= plat.x;
-          const fromRight  = b.prevX - b.radius >= plat.x + plat.w;
-          if (fromTop || fromBottom) {
-            // fromTop: bullet was above, bounce upward (-vy)
-            // fromBottom: bullet was below, bounce downward (+vy)
-            b.vy = fromTop ? -Math.abs(b.vy) : Math.abs(b.vy);
-            b.y  = fromTop ? plat.y - b.radius : plat.y + plat.h + b.radius;
-          } else if (fromLeft || fromRight) {
-            // fromLeft: bullet was left of platform, bounce left (-vx)
-            // fromRight: bullet was right of platform, bounce right (+vx)
-            b.vx = fromLeft ? -Math.abs(b.vx) : Math.abs(b.vx);
-            b.x  = fromLeft ? plat.x - b.radius : plat.x + plat.w + b.radius;
-          } else {
-            b.vy = -b.vy;  // fallback: flip vertical
+          for (let sp = 0; sp < 3; sp++) {
+            const a = Math.random() * Math.PI * 2;
+            this.renderer.addParticle(b.x, b.y, Math.cos(a) * 120, Math.sin(a) * 120, 0xffdd88, 0.22, 3);
           }
-          b.hasBouncedOff = true;  // enables owner-hit after ricochet
-          bouncedPlat = true;
+          if (b.bounces > 0) {
+            const fromTop    = b.prevY + b.radius <= plat.y;
+            const fromBottom = b.prevY - b.radius >= plat.y + plat.h;
+            const fromLeft   = b.prevX + b.radius <= plat.x;
+            const fromRight  = b.prevX - b.radius >= plat.x + plat.w;
+            if (fromTop || fromBottom) {
+              b.vy = fromTop ? -Math.abs(b.vy) : Math.abs(b.vy);
+              b.y  = fromTop ? plat.y - b.radius : plat.y + plat.h + b.radius;
+            } else if (fromLeft || fromRight) {
+              b.vx = fromLeft ? -Math.abs(b.vx) : Math.abs(b.vx);
+              b.x  = fromLeft ? plat.x - b.radius : plat.x + plat.w + b.radius;
+            } else {
+              b.vy = -b.vy;
+            }
+            b.bounces--;
+            b.hasBouncedOff = true;
+            bouncedPlat = true;
+            playRicochet();
+          } else {
+            this.bullets.splice(i, 1);
+            bouncedPlat = true;
+          }
           break;
         }
       }
@@ -947,19 +1329,29 @@ export class Game {
         const target = this.players[pi];
         if (!target || target.hp <= 0) continue;
         if (pi === b.owner && !b.hasBouncedOff) continue;
+        if (b.hitCooldowns && b.hitCooldowns[pi] > 0) continue;  // piercing hit cooldown
         const dx   = b.x - target.x;
         const dy   = b.y - target.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < b.radius + target.radius) {
           if (target.blocking) {
             b.vx = -b.vx; b.vy = -b.vy; b.owner = pi;
+            if (target.volatile) b.damage *= 2;
             this.renderer.triggerShake(3, 0.1);
+            this.renderer.spawnHitBurst(target.x, target.y, target.volatile ? 0xff6622 : 0x88ddff);
+            playBlock();
+            if (!b.piercing) break;  // reflected bullet doesn't continue through
           } else {
             this._dealDamage(b, target, pi, b.owner);
-            this.bullets.splice(i, 1);
-            bulletConsumed = true;
+            if (b.piercing) {
+              b.hitCooldowns[pi] = 0.35;  // can't re-hit this player for 350ms
+              b.hasBouncedOff = true;     // allow owner to be hit on pass-through
+            } else {
+              this.bullets.splice(i, 1);
+              bulletConsumed = true;
+              break;
+            }
           }
-          break;
         }
       }
       if (bulletConsumed) continue;
@@ -968,23 +1360,59 @@ export class Game {
 
   _dealDamage(bullet, target, targetIdx, shooterIdx) {
     const shooter = (shooterIdx >= 0 && shooterIdx < 2) ? this.players[shooterIdx] : null;
+    target.lastHitAngle = Math.atan2(bullet.vy, bullet.vx);
     let dmg = bullet.damage;
+
+    // Dead Man's Hand: scale damage with shooter's missing HP (up to +90%)
+    if (shooter && shooter.deadManHand && shooter.maxHp > 0) {
+      const missingFrac = 1 - shooter.hp / shooter.maxHp;
+      dmg *= 1 + missingFrac * 0.9;
+    }
+
+    // Armor: reduce incoming damage
+    if (target.armor > 0) dmg *= (1 - target.armor);
 
     if (target.damageDecay) {
       if (!target._decayQueue) target._decayQueue = [];
-      target._decayQueue.push({ amount: dmg / 4, timer: 1.0 });
-      target._decayQueue.push({ amount: dmg / 4, timer: 2.0 });
-      target._decayQueue.push({ amount: dmg / 4, timer: 3.0 });
-      target._decayQueue.push({ amount: dmg / 4, timer: 4.0 });
+      // Pass shooter index so leech heals as each tick fires
+      const si = shooter ? this.players.indexOf(shooter) : -1;
+      target._decayQueue.push({ amount: dmg / 4, timer: 1.0, shooterIdx: si });
+      target._decayQueue.push({ amount: dmg / 4, timer: 2.0, shooterIdx: si });
+      target._decayQueue.push({ amount: dmg / 4, timer: 3.0, shooterIdx: si });
+      target._decayQueue.push({ amount: dmg / 4, timer: 4.0, shooterIdx: si });
     } else {
       this._applyDamage(target, targetIdx, dmg, shooter);
-    }
-
-    if (shooter && shooter.leech > 0) {
-      shooter.hp = Math.min(shooter.maxHp, shooter.hp + dmg * shooter.leech);
+      if (shooter && shooter.leech > 0) {
+        const heal = dmg * shooter.leech;
+        shooter.hp = Math.min(shooter.maxHp, shooter.hp + heal);
+        const si = this.players.indexOf(shooter);
+        if (si >= 0) {
+          this._dmgNumbers.push({ x: shooter.x + (Math.random() - 0.5) * 20, y: shooter.y - shooter.radius, amount: Math.round(heal), timer: 1.0, maxTimer: 1.0, color: '#44ff88', label: `+${Math.round(heal)}` });
+        }
+      }
     }
     if (shooter && shooter.tasteOfBlood) {
       shooter.tasteTimer = 3.0;
+    }
+
+    // Explosive splash: deal 50% damage to nearby players (including shooter)
+    if (bullet.explosive) {
+      const SPLASH_RADIUS = 120;
+      const SPLASH_MULT = 0.5;
+      playExplosion();
+      this.renderer.spawnDeathBurst(target.x, target.y, 0xffaa00, Math.atan2(bullet.vy, bullet.vx));
+      for (let pi = 0; pi < this.players.length; pi++) {
+        if (pi === targetIdx) continue;
+        const sp = this.players[pi];
+        if (!sp || sp.hp <= 0) continue;
+        const dx = sp.x - target.x, dy = sp.y - target.y;
+        if (Math.sqrt(dx * dx + dy * dy) <= SPLASH_RADIUS) {
+          const splashDmg = bullet.damage * SPLASH_MULT;
+          this._applyDamage(sp, pi, splashDmg, null);
+          this._dmgNumbers.push({ x: sp.x, y: sp.y - sp.radius, amount: Math.round(splashDmg), timer: 0.9, maxTimer: 0.9, color: '#ffaa00' });
+          this.renderer.spawnHitBurst(sp.x, sp.y, 0xffaa00);
+        }
+      }
     }
 
     // Knockback: horizontal push in bullet travel direction + upward impulse
@@ -996,15 +1424,18 @@ export class Game {
     this.renderer.flashPlayer(targetIdx);
     this.renderer.triggerShake(5, 0.18);
     playHit();
-    const dmgColor = targetIdx === 0 ? '#e63946' : '#457b9d';
-    this._dmgNumbers.push({ x: target.x, y: target.y - target.radius, amount: Math.round(bullet.damage), timer: 0.9, color: dmgColor });
+    const dmgColor = target.damageDecay ? '#dd8822' : (targetIdx === 0 ? '#e63946' : '#457b9d');
+    this._dmgNumbers.push({ x: target.x + (Math.random() - 0.5) * 28, y: target.y - target.radius, amount: Math.round(dmg), timer: 0.9, maxTimer: 0.9, color: dmgColor });
   }
 
   _applyDamage(target, targetIdx, dmg, shooter) {
+    const prevFrac = target.maxHp > 0 ? target.hp / target.maxHp : 0;
     target.hp -= dmg;
     if (target.hp <= 0) {
       target.hp = 0;
       this._onPlayerDied(targetIdx);
+    } else if (prevFrac > 0.25 && target.hp / target.maxHp <= 0.25) {
+      playLowHp();
     }
   }
 
@@ -1024,6 +1455,18 @@ export class Game {
   _update(dt, t) {
     this._tick(dt);
 
+    // Cycle lobby arena preview every 4s
+    if (this.state === 'lobby') {
+      this._lobbyMapTimer -= dt;
+      if (this._lobbyMapTimer <= 0) {
+        this._lobbyMapTimer = 4.0;
+        const m = randomMap();
+        this._lobbyMapName = m.name;
+        this.renderer.setMapTint(m.bgTint || 0x111122);
+        this.renderer.buildPlatformMeshes(m.platforms, m.platformColor);
+      }
+    }
+
     // Broadcast state from host at ~60hz
     if (this.isOnline && this.isHost && this.state === 'fight') {
       this._broadcastState();
@@ -1037,8 +1480,12 @@ export class Game {
     const dt = this._dt || 0;
 
     // Update meshes before rendering so Three.js sees current frame state
-    if (this.state === 'fight' || this.state === 'match_end') {
-      this.renderer.syncBullets(this.bullets);
+    if (this.state === 'start_pick') {
+      if (this.players[0]) this.renderer.updatePlayerMesh(0, this.players[0], 0, t, dt);
+      if (this.players[1]) this.renderer.updatePlayerMesh(1, this.players[1], Math.PI, t, dt);
+    }
+    if (this.state === 'fight' || this.state === 'match_end' || this.state === 'card_pick') {
+      this.renderer.syncBullets(this.state === 'fight' ? this.bullets : []);
       if (this.players[0]) this.renderer.updatePlayerMesh(0, this.players[0], this.players[0].aimAngle, t, dt);
       if (this.players[1]) this.renderer.updatePlayerMesh(1, this.players[1], this.players[1].aimAngle, t, dt);
     }
@@ -1053,9 +1500,9 @@ export class Game {
         const isLocalPicker = this.isAI ? this.pickerIdx === 0
           : (this.isLocal || (this.isHost && this.pickerIdx === 0) || (!this.isHost && this.pickerIdx === 1));
         const pickerCards = this.players[this.pickerIdx]?.cards || [];
-        this.ui.drawCardPicker(this.cardOffer, this.cardHovered, this.pickerIdx, isLocalPicker, pickerCards);
+        this.ui.drawCardPicker(this.cardOffer, this.cardHovered, this.pickerIdx, isLocalPicker, pickerCards, 0);
       } else {
-        this.ui.drawLobby(ls);
+        this.ui.drawLobby(ls, t, this._canvasMouseX || 0, this._canvasMouseY || 0, this._lobbyMapName || '');
       }
       this.ui.drawFooter();
       return;
@@ -1065,27 +1512,35 @@ export class Game {
       const p1 = this.players[0];
       const p2 = this.players[1];
       if (p1 && p2) {
-        this.ui.drawHealthBars(p1, p2);
+        this.ui.drawNoodleArms(p1, p2, t);
+        this.ui.drawHealthBars(p1, p2, t);
         this.ui.drawScores(p1.score, p2.score);
         this.ui.drawAmmo(p1, p2);
         this.ui.drawCardStrips(p1.cards || [], p2.cards || []);
         if (this.isOnline) this.ui.drawYouIndicator(this.isHost ? 0 : 1);
+        if (this.isAI) this.ui.drawAILabel(this.aiDifficulty);
       }
       if (this._dmgNumbers.length > 0) this.ui.drawDamageNumbers(this._dmgNumbers);
       if (this.overlayText) {
-        this.ui.drawRoundText(this.overlayText, this.overlaySubtext, this.overlayColor);
+        const ovMax  = this.overlayMaxTimer || 1;
+        const ovFrac = Math.max(0, Math.min(1, this.overlayTimer / ovMax));
+        this.ui.drawRoundText(this.overlayText, this.overlaySubtext, this.overlayColor, this.overlayMidtext || '', ovFrac);
       }
+      if (this.paused) this.ui.drawPause();
     }
 
     if (this.state === 'card_pick') {
+      this.ui.drawNoodleArms(this.players[0], this.players[1], t);
       const isLocalPicker = this.isAI ? this.pickerIdx === 0
         : (this.isLocal || (this.isHost && this.pickerIdx === 0) || (!this.isHost && this.pickerIdx === 1));
       const pickerCards = this.players[this.pickerIdx]?.cards || [];
-      this.ui.drawCardPicker(this.cardOffer, this.cardHovered, this.pickerIdx, isLocalPicker, pickerCards);
+      const fightNum = (this.players[0]?.fightWins || 0) + (this.players[1]?.fightWins || 0) + 1;
+      this.ui.drawCardPicker(this.cardOffer, this.cardHovered, this.pickerIdx, isLocalPicker, pickerCards, fightNum);
     }
 
     if (this.state === 'match_end') {
-      this.ui.drawWinner(this.matchWinner, this.players[0]?.score || 0, this.players[1]?.score || 0);
+      this.ui.drawNoodleArms(this.players[0], this.players[1], t);
+      this.ui.drawWinner(this.matchWinner, this.players[0]?.score || 0, this.players[1]?.score || 0, this.players[0]?.cards || [], this.players[1]?.cards || [], this.isOnline && !this.isHost, this._canvasMouseX || 0, this._canvasMouseY || 0);
     }
 
     this.ui.drawFooter();
