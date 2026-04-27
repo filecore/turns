@@ -235,7 +235,7 @@ export class UI {
 
     if (total > 9) {
       // Compact display: "N / MAX" text for large magazines
-      ctx.fillStyle = P_COLORS[idx];
+      ctx.fillStyle = '#ffee00';
       ctx.font      = this._font(11, '600');
       ctx.textAlign = 'center';
       ctx.fillText(`${current}/${total}`, sx, sy + this._px(5));
@@ -245,7 +245,7 @@ export class UI {
       const gap   = this._px(3);
       const startX  = sx - (total * (dotW + gap) - gap) / 2;
       for (let i = 0; i < total; i++) {
-        ctx.fillStyle = i < current ? P_COLORS[idx] : '#444444';
+        ctx.fillStyle = i < current ? '#ffee00' : '#444444';
         ctx.fillRect(startX + i * (dotW + gap), sy, dotW, dotH);
       }
     }
