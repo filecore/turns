@@ -1289,7 +1289,7 @@ export class Game {
         }
       }
 
-      if (!b.noGravity) b.vy += GRAVITY * 0.25 * dt;  // bullets arc under partial gravity
+      if (!b.noGravity) b.vy += GRAVITY * 0.65 * dt;  // ballistic arc — high enough to lob over obstacles
       b.x  += b.vx * dt;
       b.y  += b.vy * dt;
 

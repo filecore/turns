@@ -285,7 +285,7 @@ export class Renderer {
     const bodyGeo  = new THREE.CircleGeometry(1, 24);
     const bodyMat  = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
     const body     = new THREE.Mesh(bodyGeo, bodyMat);
-    body.scale.set(0.82, 1.0, 1);
+    body.scale.set(0.95, 1.0, 1);
     root.add(body);
 
     // Eyes -- large white sclera with dark tracking pupils
@@ -333,7 +333,7 @@ export class Renderer {
     limbGroup.add(gunArmChain, backArmChain, legLChain, legRChain);
 
     // White hand ball at gun-arm end (slightly in front of limb layer)
-    const handBallGeo = new THREE.CircleGeometry(0.29, 10);
+    const handBallGeo = new THREE.CircleGeometry(0.44, 12);
     const handBallMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     const handBall    = new THREE.Mesh(handBallGeo, handBallMat);
     handBall.position.z = 0.02;
@@ -513,39 +513,42 @@ export class Renderer {
     const poy = -Math.sin(localAngle) * 0.08;
     if (pm.pupilL) { pm.pupilL.position.set(pox, poy, 0.05); pm.pupilR.position.set(pox, poy, 0.05); }
 
+    const ARM_LEN = 1.7;
+    const GUN_SAG = 0.15;  // how far gun floats above the arm midline (perpendicular offset)
+
     if (pm.gunKickTimer > 0) {
       pm.gunKickTimer -= dt;
       const kickFrac = Math.max(0, pm.gunKickTimer / 0.09);
-      const dist = 1.4 - kickFrac * 0.42;
-      pm.gun.position.set(Math.cos(localAngle) * dist, -Math.sin(localAngle) * dist, 0.1);
+      const dist = ARM_LEN - kickFrac * 0.42;
+      pm.gun.position.set(Math.cos(localAngle) * dist - Math.sin(localAngle) * GUN_SAG,
+                          -Math.sin(localAngle) * dist - Math.cos(localAngle) * GUN_SAG, 0.1);
     } else {
-      pm.gun.position.set(Math.cos(localAngle) * 1.4, -Math.sin(localAngle) * 1.4, 0.1);
+      pm.gun.position.set(Math.cos(localAngle) * ARM_LEN - Math.sin(localAngle) * GUN_SAG,
+                          -Math.sin(localAngle) * ARM_LEN - Math.cos(localAngle) * GUN_SAG, 0.1);
     }
     pm.gun.rotation.z = localAngle;
 
-    // ── Noodle limb chains ───────────────────────────────────────────────────────
+    // ── Noodle limb chains -- static U-arc hang, slight swing when walking ──────
     const a = localAngle;
     const walking   = playerState.onGround && Math.abs(playerState.vx || 0) > 10;
     const walkPhase = (t * 8) % (Math.PI * 2);
+    const ARM_SAG   = 0.55;  // downward sag for natural U-arc hang (y+ = down in Three.js)
 
-    // Gun arm (aim direction)
+    // Gun arm: hangs as U from shoulder to hand, sags downward
     const sGx = Math.cos(a) * 0.68,  sGy = -Math.sin(a) * 0.68;
-    const hGx = Math.cos(a) * 1.4,   hGy = -Math.sin(a) * 1.4;
-    const perpX = Math.sin(a), perpY = Math.cos(a);
-    const wobG  = Math.sin(t * 6.2 + idx * 1.8) * 0.7;
-    this._updateBezierChain(pm.gunArmChain,  sGx, sGy,
-      (sGx + hGx) / 2 + perpX * wobG, (sGy + hGy) / 2 + perpY * wobG,  hGx, hGy);
+    const hGx = Math.cos(a) * ARM_LEN, hGy = -Math.sin(a) * ARM_LEN;
+    this._updateBezierChain(pm.gunArmChain, sGx, sGy,
+      (sGx + hGx) / 2, (sGy + hGy) / 2 + ARM_SAG,  hGx, hGy);
 
-    // Back arm (opposite direction from aim -- always the hand away from opponent)
+    // Back arm: opposite direction, also hangs as U arc
     const sBx = -Math.cos(a) * 0.68, sBy = Math.sin(a) * 0.68;
-    const bSwing = walking ? Math.sin(walkPhase + Math.PI) * 0.35 : 0;
-    const hBx = -Math.cos(a) * 1.4 + bSwing;
-    const hBy =  Math.sin(a) * 1.4 + 0.25;  // slight droop (y+ = down)
-    const wobB = Math.sin(t * 4.8 + idx * 2.3) * 0.5;
+    const bSwing = walking ? Math.sin(walkPhase + Math.PI) * 0.25 : 0;
+    const hBx = -Math.cos(a) * ARM_LEN + bSwing;
+    const hBy =  Math.sin(a) * ARM_LEN + 0.2;
     this._updateBezierChain(pm.backArmChain, sBx, sBy,
-      (sBx + hBx) / 2 + wobB, (sBy + hBy) / 2,  hBx, hBy);
+      (sBx + hBx) / 2, (sBy + hBy) / 2 + ARM_SAG,  hBx, hBy);
 
-    // Hand ball lives in the back arm (free hand / shield hand) -- never at gun arm
+    // Hand ball lives in the back arm (shield hand) -- never at gun arm
     pm.handBall.position.set(hBx, hBy, 0.02);
     pm.shieldBall.visible = false;  // shieldBall replaced by handBall color change
     if (playerState.blocking) {
@@ -583,7 +586,7 @@ export class Renderer {
 
     for (const b of bullets) {
       const ownerColor = parseInt(PLAYER_COLORS[b.owner]?.replace('#', '') || 'ffffff', 16);
-      const bulletColor = b.explosive ? 0xff6600 : (b.homing ? 0xffbb22 : (b.noGravity ? 0xffffdd : (b.piercing ? 0x88ff88 : ownerColor)));
+      const bulletColor = b.explosive ? 0xff6600 : (b.homing ? 0xffbb22 : (b.noGravity ? 0xffffdd : (b.piercing ? 0x88ff88 : 0xffee00)));
 
       const geo  = new THREE.CircleGeometry(b.radius, 8);
       const mat  = new THREE.MeshBasicMaterial({ color: bulletColor, side: THREE.DoubleSide });
