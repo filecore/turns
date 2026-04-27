@@ -281,26 +281,37 @@ export class Renderer {
     const color  = parseInt(PLAYER_COLORS[idx].replace('#', ''), 16);
     const root   = new THREE.Group();
 
-    // Body circle
+    // Body -- slightly oval (taller than wide, like ROUNDS characters)
     const bodyGeo  = new THREE.CircleGeometry(1, 24);
     const bodyMat  = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide });
     const body     = new THREE.Mesh(bodyGeo, bodyMat);
+    body.scale.set(0.82, 1.0, 1);
     root.add(body);
 
-    // Eyes (two dots)
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-    const eyeGeo = new THREE.CircleGeometry(0.1, 8);
-    const eyeL   = new THREE.Mesh(eyeGeo, eyeMat);
-    const eyeR   = new THREE.Mesh(eyeGeo, eyeMat);
-    eyeL.position.set(-0.28, -0.18, 0.1);
-    eyeR.position.set( 0.28, -0.18, 0.1);
+    // Eyes -- large white sclera with dark tracking pupils
+    const scleraMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    const scleraGeo = new THREE.CircleGeometry(0.22, 12);
+    const eyeL      = new THREE.Mesh(scleraGeo, scleraMat);
+    const eyeR      = new THREE.Mesh(scleraGeo, scleraMat);
+    eyeL.position.set(-0.24, -0.10, 0.1);
+    eyeR.position.set( 0.24, -0.10, 0.1);
     root.add(eyeL, eyeR);
 
+    // Pupils as children of sclera so they blink/squint together
+    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x111111, side: THREE.DoubleSide });
+    const pupilGeo = new THREE.CircleGeometry(0.11, 8);
+    const pupilL   = new THREE.Mesh(pupilGeo, pupilMat);
+    const pupilR   = new THREE.Mesh(pupilGeo, pupilMat);
+    pupilL.position.set(0, 0, 0.05);
+    pupilR.position.set(0, 0, 0.05);
+    eyeL.add(pupilL);
+    eyeR.add(pupilR);
+
     // Mouth (thin horizontal rect)
-    const mouthGeo = new THREE.PlaneGeometry(0.4, 0.08);
+    const mouthGeo = new THREE.PlaneGeometry(0.38, 0.08);
     const mouthMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
     const mouth    = new THREE.Mesh(mouthGeo, mouthMat);
-    mouth.position.set(0, 0.28, 0.1);
+    mouth.position.set(0, 0.30, 0.1);
     root.add(mouth);
 
     // Gun — orbits to aim direction; position overridden each frame in updatePlayerMesh
@@ -355,7 +366,7 @@ export class Renderer {
     const legL = this._buildLeg();  legL.visible = false;  root.add(legL);
     const legR = this._buildLeg();  legR.visible = false;  root.add(legR);
 
-    return { root, body, gun, eyeL, eyeR, mouth, legL, legR, blockArc, armorRing, color,
+    return { root, body, gun, eyeL, eyeR, pupilL, pupilR, mouth, legL, legR, blockArc, armorRing, color,
              gunArmChain, backArmChain, legLChain, legRChain, handBall, shieldBall,
              baseRadius: 1, hitFlashTimer: 0, deathTimer: 0, prevAlive: true,
              blinkTimer: 2 + Math.random() * 3, blinkActive: false, gunKickTimer: 0, facingRight: true };
@@ -496,6 +507,12 @@ export class Renderer {
     pm.root.scale.set(facingRight ? r * stretchX : -r * stretchX, r * stretchY, 1);
 
     const localAngle = facingRight ? aimAngle : Math.PI - aimAngle;
+
+    // Pupils track aim direction (offset within sclera local space)
+    const pox = Math.cos(localAngle) * 0.08;
+    const poy = -Math.sin(localAngle) * 0.08;
+    if (pm.pupilL) { pm.pupilL.position.set(pox, poy, 0.05); pm.pupilR.position.set(pox, poy, 0.05); }
+
     if (pm.gunKickTimer > 0) {
       pm.gunKickTimer -= dt;
       const kickFrac = Math.max(0, pm.gunKickTimer / 0.09);
