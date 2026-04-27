@@ -514,7 +514,7 @@ export class Renderer {
     if (pm.pupilL) { pm.pupilL.position.set(pox, poy, 0.05); pm.pupilR.position.set(pox, poy, 0.05); }
 
     const ARM_LEN = 1.7;
-    const GUN_SAG = 0.15;  // how far gun floats above the arm midline (perpendicular offset)
+    const GUN_SAG = 0.45;  // perpendicular offset above arm line; must exceed disc radius(0.21)+gun half-height(0.15)
 
     if (pm.gunKickTimer > 0) {
       pm.gunKickTimer -= dt;
